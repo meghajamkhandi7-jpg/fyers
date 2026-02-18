@@ -531,6 +531,37 @@ def fyers_run_screener(watchlist: Union[str, list, None] = None) -> Dict[str, An
     client = FyersClient()
     result = run_screener(client=client, watchlist=watchlist)
 
+    shadow_result: Dict[str, Any]
+    if result.get("success"):
+        try:
+            from institutional_agents.integration.shadow_adapter import run_shadow_adapter
+
+            shadow_result = run_shadow_adapter(
+                baseline_result=result,
+                runtime_context={
+                    "signature": _global_state.get("signature"),
+                    "current_date": _global_state.get("current_date"),
+                    "data_path": _global_state.get("data_path"),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            shadow_result = {
+                "status": "failed_safe",
+                "enabled": False,
+                "shadow_mode": True,
+                "record_count": 0,
+                "error": str(exc),
+            }
+    else:
+        shadow_result = {
+            "status": "skipped_baseline_failed",
+            "enabled": False,
+            "shadow_mode": True,
+            "record_count": 0,
+        }
+
+    result["institutional_shadow"] = shadow_result
+
     audit_entry = {
         "timestamp": datetime.now().isoformat(),
         "signature": _global_state.get("signature"),
@@ -538,6 +569,12 @@ def fyers_run_screener(watchlist: Union[str, list, None] = None) -> Dict[str, An
         "watchlist_input": watchlist,
         "success": result.get("success"),
         "summary": result.get("summary"),
+        "institutional_shadow": {
+            "status": shadow_result.get("status"),
+            "record_count": shadow_result.get("record_count", 0),
+            "agree_count": shadow_result.get("agree_count", 0),
+            "disagree_count": shadow_result.get("disagree_count", 0),
+        },
         "message": result.get("message"),
         "results": result.get("results"),
     }

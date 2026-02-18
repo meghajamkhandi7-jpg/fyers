@@ -7,43 +7,45 @@ Scope: This checklist starts after all scaffold phases are complete.
 ---
 
 ## 0) Preconditions
-- [ ] Confirm all items are complete in `ROADMAP_CHECKLIST.md`
-- [ ] Confirm Phase 1 real-data run passed (`phase1_20day_realdata_run_summary.json`)
-- [ ] Confirm Phase 5 controls still default-safe (`institutional_agent_enabled=false`, dry-run behavior)
-- [ ] Confirm no direct live-order path changes are required in this step
+- [x] Confirm all items are complete in `ROADMAP_CHECKLIST.md`
+- [x] Confirm Phase 1 real-data run passed (`phase1_20day_realdata_run_summary.json`)
+- [x] Confirm Phase 5 controls still default-safe (`institutional_agent_enabled=false`, dry-run behavior)
+- [x] Confirm no direct live-order path changes are required in this step
 
 ## 1) Integration Design (Adapter-Only)
-- [ ] Define a single adapter entrypoint between ClawWork agent flow and institutional decision engine
-- [ ] Define strict input mapping from ClawWork context -> institutional input contract
-- [ ] Define strict output mapping from institutional decision -> shadow comparison record
-- [ ] Ensure adapter has no order execution authority
-- [ ] Add feature flag guard at adapter call-site (disabled by default)
+- [x] Define a single adapter entrypoint between ClawWork agent flow and institutional decision engine
+- [x] Define strict input mapping from ClawWork context -> institutional input contract
+- [x] Define strict output mapping from institutional decision -> shadow comparison record
+- [x] Ensure adapter has no order execution authority
+- [x] Add feature flag guard at adapter call-site (disabled by default)
 
 **Evidence**
-- [ ] Adapter design note committed under `institutional_agents/reports/`
-- [ ] Mapping examples for 3 underlyings (NIFTY50, BANKNIFTY, SENSEX)
+- [x] Adapter design note committed under `institutional_agents/reports/` (see `reports/integration_adapter_design_2026-02-18.md`)
+- [x] Mapping examples for 3 underlyings (NIFTY50, BANKNIFTY, SENSEX) (see `reports/integration_adapter_design_2026-02-18.md`)
 
 ## 2) Shadow Integration (No Order Impact)
-- [ ] Wire adapter call in shadow mode only
-- [ ] Keep existing ClawWork decision as primary/live path
-- [ ] Store side-by-side baseline vs institutional outputs for each decision cycle
-- [ ] Log confidence, rationale, veto state, and timestamp
-- [ ] Add daily aggregation artifact for shadow performance review
+- [x] Wire adapter call in shadow mode only
+- [x] Keep existing ClawWork decision as primary/live path
+- [x] Store side-by-side baseline vs institutional outputs for each decision cycle
+- [x] Log confidence, rationale, veto state, and timestamp
+- [x] Add daily aggregation artifact for shadow performance review
 
 **Evidence**
-- [ ] Shadow comparison log file path documented
+- [x] Shadow comparison log file path documented (see `reports/integration_shadow_step2_impl_2026-02-18.md`)
+- [x] First daily shadow summary generated (`reports/integration_shadow_2026-02-18_daily_summary.json`)
 - [ ] At least 5 consecutive sessions of shadow logs generated
 
 ## 3) Safety and Observability
-- [ ] Add integration-level health checks (input completeness, adapter success rate)
-- [ ] Add alert for adapter failures above threshold
-- [ ] Add alert for schema mismatch or missing critical fields
-- [ ] Add alert for abnormal disagreement spikes vs baseline
-- [ ] Verify fallback behavior (adapter failure => baseline-only operation)
+- [x] Add integration-level health checks (input completeness, adapter success rate)
+- [x] Add alert for adapter failures above threshold
+- [x] Add alert for schema mismatch or missing critical fields
+- [x] Add alert for abnormal disagreement spikes vs baseline
+- [x] Verify fallback behavior (adapter failure => baseline-only operation)
 
 **Evidence**
-- [ ] Monitoring report artifact generated
-- [ ] Alert test artifact generated
+- [x] Observability runner implemented (`integration/shadow_observability_report.py`)
+- [x] Monitoring report artifact generated (`reports/integration_observability_2026-02-18.json`)
+- [x] Alert test artifact generated (`reports/integration_alert_test_2026-02-18.json`)
 
 ## 4) Gate Evaluation Before Any Traffic
 - [ ] Performance gate met in shadow window

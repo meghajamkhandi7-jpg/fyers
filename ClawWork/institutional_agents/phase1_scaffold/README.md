@@ -70,6 +70,37 @@ python sweep_report_generator.py --summary-json reports/tuning_threshold_sweep_s
 Output:
 - `reports/tuning_threshold_sweep_summary.md`
 
+## Full Phase 1 Workflow (One Command)
+```bash
+cd /workspaces/fyers/ClawWork/institutional_agents/phase1_scaffold
+python phase1_master_runner.py --input sample_batch_input.csv --outdir reports --tag phase1_demo
+```
+
+Master workflow outputs:
+- `reports/phase1_demo_sweep_threshold_sweep_summary.json`
+- `reports/phase1_demo_sweep_threshold_sweep_ranked.json`
+- `reports/phase1_demo_sweep_threshold_sweep_summary.md`
+- `reports/phase1_demo_pipeline_report.json`
+- `reports/phase1_demo_pipeline_summary.json`
+- `reports/phase1_demo_pipeline_report.md`
+
+## Release Gate Check
+```bash
+cd /workspaces/fyers/ClawWork/institutional_agents/phase1_scaffold
+python phase1_release_check.py --tag phase1_demo --outdir reports
+```
+
+Expected: `"passed": true` before Phase 1 sign-off.
+
+## Generate Phase 1 Sign-off Note
+```bash
+cd /workspaces/fyers/ClawWork/institutional_agents/phase1_scaffold
+python phase1_signoff_generator.py --tag phase1_demo --outdir reports
+```
+
+Output:
+- `reports/phase1_demo_phase1_signoff.md`
+
 ## Notes
 - Paper mode only
 - No order placement

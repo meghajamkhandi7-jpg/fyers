@@ -33,6 +33,7 @@ Goal: Build an institutional-grade decision system in phases **without changing 
 ---
 
 ## Phase 1 — MVP Single-Agent (Price + Momentum) (3–7 days)
+- [ ] Bootstrap code from [phase1_scaffold/README.md](phase1_scaffold/README.md)
 - [ ] Review [PHASE1_SIGNAL_ENGINE_SPEC.md](PHASE1_SIGNAL_ENGINE_SPEC.md)
 - [ ] Execute [PHASE1_TEST_CASES.md](PHASE1_TEST_CASES.md)
 - [ ] Follow [PHASE1_EXECUTION_CHECKLIST.md](PHASE1_EXECUTION_CHECKLIST.md)

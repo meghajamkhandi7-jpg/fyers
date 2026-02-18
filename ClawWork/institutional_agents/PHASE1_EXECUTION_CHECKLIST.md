@@ -5,12 +5,14 @@
 - [ ] Lock thresholds version for this cycle
 - [ ] Select 20+ recent sessions for evaluation
 - [ ] Prepare output folder for run logs
+- [ ] Run scaffold once: `python runner.py --input sample_input.json`
 
 ## 2) Build
 - [ ] Implement isolated signal engine module
 - [ ] Implement risk guard checks
 - [ ] Implement strike suggestion logic
 - [ ] Implement structured decision logging
+- [ ] Replace sample input with real paper dataset slices
 
 ## 3) Validate
 - [ ] Execute all Phase 1 test cases

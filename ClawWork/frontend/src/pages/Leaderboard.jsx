@@ -670,10 +670,10 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
                       animate={{
                         opacity: 1, x: 0,
                         backgroundColor: flash === 'up'
-                          ? ['rgba(52,211,153,0.15)', 'transparent']
+                          ? ['rgba(52,211,153,0.15)', 'rgba(0,0,0,0)']
                           : flash === 'down'
-                          ? ['rgba(248,113,113,0.15)', 'transparent']
-                          : 'transparent',
+                          ? ['rgba(248,113,113,0.15)', 'rgba(0,0,0,0)']
+                          : 'rgba(0,0,0,0)',
                       }}
                       transition={{ delay: index * 0.04, duration: 0.3 }}
                       style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}

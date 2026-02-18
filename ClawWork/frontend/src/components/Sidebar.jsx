@@ -90,7 +90,13 @@ const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, select
   const handleAgentSelect = (signature) => {
     onSelectAgent(signature)
     if (location.pathname.startsWith('/agent/')) {
-      navigate(`/agent/${signature}`)
+      navigate(`/agent/${encodeURIComponent(signature)}`)
+      return
+    }
+
+    const agentAwareRoutes = ['/dashboard', '/work', '/learning']
+    if (!agentAwareRoutes.includes(location.pathname)) {
+      navigate('/dashboard')
     }
   }
 

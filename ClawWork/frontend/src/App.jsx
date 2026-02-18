@@ -92,7 +92,13 @@ function App() {
 
   return (
     <DisplayNamesContext.Provider value={displayNames}>
-    <Router basename={import.meta.env.BASE_URL}>
+    <Router
+      basename={import.meta.env.BASE_URL}
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <div className="flex h-screen bg-gray-50">
         <Sidebar
           agents={visibleAgents}
@@ -117,7 +123,7 @@ function App() {
               />
             } />
             <Route path="/agent/:signature" element={
-              <AgentDetail />
+              <AgentDetail onRouteAgentSelected={handleSelectAgent} />
             } />
             <Route path="/artifacts" element={
               <Artifacts />

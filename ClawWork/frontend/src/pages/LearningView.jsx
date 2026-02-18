@@ -3,8 +3,10 @@ import { Brain, BookOpen, Sparkles, Clock, AlertCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import { fetchAgentLearning } from '../api'
+import { useDisplayName } from '../DisplayNamesContext'
 
 const LearningView = ({ agents, selectedAgent }) => {
+  const dn = useDisplayName()
   const [learningData, setLearningData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedEntry, setSelectedEntry] = useState(null)
@@ -82,6 +84,7 @@ const LearningView = ({ agents, selectedAgent }) => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Learning & Knowledge</h1>
           <p className="text-gray-500 mt-1">Agent's accumulated knowledge and insights</p>
+          <p className="text-sm text-gray-400 mt-1">Selected agent: {dn(selectedAgent)}</p>
         </div>
         <div className="flex items-center space-x-4">
           <div className="bg-white rounded-xl px-6 py-3 shadow-sm border border-gray-200">
@@ -195,7 +198,7 @@ const LearningView = ({ agents, selectedAgent }) => {
           {entries.length === 0 && (
             <div className="text-center py-12">
               <Brain className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-600">No learning yet</h3>
+              <h3 className="text-lg font-medium text-gray-600">No learning yet for {dn(selectedAgent)}</h3>
               <p className="text-gray-500 mt-2">
                 Agent will accumulate knowledge here as they learn
               </p>

@@ -422,7 +422,7 @@ const WorkView = ({ agents, selectedAgent }) => {
       <div className="grid grid-cols-1 gap-6">
         {pageTasks.map((task, index) => (
           <motion.div
-            key={task.task_id + '-' + task.date}
+            key={`${task.task_id}-${task.date}-${startIdx + index}`}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: Math.min(index * 0.03, 0.3) }}

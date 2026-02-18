@@ -242,24 +242,48 @@ const WorkView = ({ agents, selectedAgent }) => {
   const [sortMode, setSortMode] = useState('date') // 'date' | 'score'
 
   useEffect(() => {
-    if (selectedAgent) {
-      fetchTasks()
+    let cancelled = false
+
+    if (!selectedAgent) {
+      setTasks([])
+      setSelectedTask(null)
+      setPreviewArtifact(null)
+      setTerminalLog(null)
       setCurrentPage(1)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    const loadTasks = async () => {
+      try {
+        setLoading(true)
+        setTasks([])
+        setSelectedTask(null)
+        setPreviewArtifact(null)
+        setTerminalLog(null)
+        setCurrentPage(1)
+
+        const data = await fetchAgentTasks(selectedAgent)
+        if (!cancelled) {
+          setTasks(data.tasks || [])
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error fetching tasks:', error)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadTasks()
+
+    return () => {
+      cancelled = true
     }
   }, [selectedAgent])
-
-  const fetchTasks = async () => {
-    if (!selectedAgent) return
-    try {
-      setLoading(true)
-      const data = await fetchAgentTasks(selectedAgent)
-      setTasks(data.tasks || [])
-    } catch (error) {
-      console.error('Error fetching tasks:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (!selectedAgent) {
     return (

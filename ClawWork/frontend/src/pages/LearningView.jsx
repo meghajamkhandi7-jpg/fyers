@@ -10,25 +10,44 @@ const LearningView = ({ agents, selectedAgent }) => {
   const [selectedEntry, setSelectedEntry] = useState(null)
 
   useEffect(() => {
-    if (selectedAgent) {
-      fetchLearningData()
-      // Refresh every 5 seconds to catch new learning
-      const interval = setInterval(fetchLearningData, 5000)
-      return () => clearInterval(interval)
+    let cancelled = false
+
+    if (!selectedAgent) {
+      setLearningData(null)
+      setSelectedEntry(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    const fetchLearningData = async (signature) => {
+      try {
+        setLoading(true)
+        const data = await fetchAgentLearning(signature)
+        if (!cancelled) {
+          setLearningData(data)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error fetching learning data:', error)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    setLearningData(null)
+    setSelectedEntry(null)
+    fetchLearningData(selectedAgent)
+
+    // Refresh every 5 seconds to catch new learning
+    const interval = setInterval(() => fetchLearningData(selectedAgent), 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
     }
   }, [selectedAgent])
-
-  const fetchLearningData = async () => {
-    if (!selectedAgent) return
-    try {
-      setLoading(true)
-      setLearningData(await fetchAgentLearning(selectedAgent))
-    } catch (error) {
-      console.error('Error fetching learning data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (!selectedAgent) {
     return (

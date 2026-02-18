@@ -22,6 +22,7 @@ def _to_chain_input(item: Dict[str, Any]) -> OptionChainInput:
         underlying_change_pct=float(item["underlying_change_pct"]),
         iv_percentile=float(item["iv_percentile"]),
         straddle_breakout_direction=item["straddle_breakout_direction"],
+        straddle_band_pct=float(item.get("straddle_band_pct", 12.0)),
         rows=_to_rows(item.get("rows", [])),
     )
 

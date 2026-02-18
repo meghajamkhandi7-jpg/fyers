@@ -18,6 +18,7 @@ def _load_input(path: Path) -> OptionChainInput:
         underlying_change_pct=raw["underlying_change_pct"],
         iv_percentile=raw["iv_percentile"],
         straddle_breakout_direction=raw["straddle_breakout_direction"],
+        straddle_band_pct=float(raw.get("straddle_band_pct", 12.0)),
         rows=rows,
     )
 

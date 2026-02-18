@@ -21,7 +21,7 @@
       "NO_TRADE": 1
     },
     "options_veto_pct": 33.33,
-    "average_options_score": 66.5
+    "average_options_score": 64.5
   },
   "results": [
     {
@@ -34,14 +34,36 @@
         "signal": "BULLISH",
         "confidence": "HIGH",
         "preferred_strike_zone": "OTM_1",
-        "options_score": 83.75,
-        "rationale": "Bullish options profile (score=83.75).",
+        "options_score": 81.0,
+        "momentum_score": 65.0,
+        "greeks_score": 100.0,
+        "volatility_score": 70.0,
+        "liquidity_score": 80.0,
+        "straddle_score": 80.0,
+        "weighted_components": {
+          "momentum": 13.0,
+          "greeks": 30.0,
+          "volatility": 14.0,
+          "liquidity": 12.0,
+          "straddle": 12.0
+        },
+        "atm_straddle_price": 210.7,
+        "straddle_upper_band": 235.98,
+        "straddle_lower_band": 185.42,
+        "straddle_band_pct": 12.0,
+        "rationale": "Bullish options profile (score=81.00).",
         "liquidity_pass": true,
         "spread_pass": true
       },
       "final_decision": {
         "action": "BUY_CALL",
         "confidence": "HIGH",
+        "final_weighted_score": 73.8,
+        "score_breakdown": {
+          "momentum": 65.0,
+          "options": 81.0,
+          "final_weighted": 73.8
+        },
         "rationale": "Momentum and options signals aligned bullish."
       }
     },
@@ -55,14 +77,36 @@
         "signal": "BEARISH",
         "confidence": "HIGH",
         "preferred_strike_zone": "OTM_1",
-        "options_score": 80.0,
-        "rationale": "Bearish options profile (score=80.00).",
+        "options_score": 78.0,
+        "momentum_score": 65.0,
+        "greeks_score": 100.0,
+        "volatility_score": 55.0,
+        "liquidity_score": 80.0,
+        "straddle_score": 80.0,
+        "weighted_components": {
+          "momentum": 13.0,
+          "greeks": 30.0,
+          "volatility": 11.0,
+          "liquidity": 12.0,
+          "straddle": 12.0
+        },
+        "atm_straddle_price": 353.0,
+        "straddle_upper_band": 388.3,
+        "straddle_lower_band": 317.7,
+        "straddle_band_pct": 10.0,
+        "rationale": "Bearish options profile (score=78.00).",
         "liquidity_pass": true,
         "spread_pass": true
       },
       "final_decision": {
         "action": "BUY_PUT",
         "confidence": "HIGH",
+        "final_weighted_score": 72.15,
+        "score_breakdown": {
+          "momentum": 65.0,
+          "options": 78.0,
+          "final_weighted": 72.15
+        },
         "rationale": "Momentum and options signals aligned bearish."
       }
     },
@@ -76,7 +120,23 @@
         "signal": "NO_TRADE",
         "confidence": "LOW",
         "preferred_strike_zone": "NONE",
-        "options_score": 35.75,
+        "options_score": 34.5,
+        "momentum_score": 35.0,
+        "greeks_score": 25.0,
+        "volatility_score": 70.0,
+        "liquidity_score": 20.0,
+        "straddle_score": 20.0,
+        "weighted_components": {
+          "momentum": 7.0,
+          "greeks": 7.5,
+          "volatility": 14.0,
+          "liquidity": 3.0,
+          "straddle": 3.0
+        },
+        "atm_straddle_price": null,
+        "straddle_upper_band": null,
+        "straddle_lower_band": null,
+        "straddle_band_pct": 12.0,
         "rationale": "Liquidity or spread guard failed.",
         "liquidity_pass": false,
         "spread_pass": false
@@ -84,6 +144,12 @@
       "final_decision": {
         "action": "NO_TRADE",
         "confidence": "LOW",
+        "final_weighted_score": 32.48,
+        "score_breakdown": {
+          "momentum": 30.0,
+          "options": 34.5,
+          "final_weighted": 32.48
+        },
         "rationale": "Options guardrail veto."
       }
     }

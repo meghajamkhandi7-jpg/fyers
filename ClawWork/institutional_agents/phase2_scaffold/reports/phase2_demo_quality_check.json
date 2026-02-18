@@ -12,6 +12,10 @@
     "guardrails_enforced": {
       "passed": true,
       "issues": []
+    },
+    "decision_layer_scores_present": {
+      "passed": true,
+      "issues": []
     }
   }
 }

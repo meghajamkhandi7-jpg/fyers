@@ -19,6 +19,16 @@ REQUIRED_OPTIONS_SIGNAL_KEYS = [
     "confidence",
     "preferred_strike_zone",
     "options_score",
+    "momentum_score",
+    "greeks_score",
+    "volatility_score",
+    "liquidity_score",
+    "straddle_score",
+    "weighted_components",
+    "atm_straddle_price",
+    "straddle_upper_band",
+    "straddle_lower_band",
+    "straddle_band_pct",
     "rationale",
     "liquidity_pass",
     "spread_pass",
@@ -62,6 +72,23 @@ def _check_scores(results: List[Dict[str, Any]]) -> List[str]:
         if not (0.0 <= score_val <= 100.0):
             issues.append(f"Result #{idx} options_score out of range: {score_val}")
 
+        for component_name in [
+            "momentum_score",
+            "greeks_score",
+            "volatility_score",
+            "liquidity_score",
+            "straddle_score",
+        ]:
+            component_value = options_signal.get(component_name)
+            try:
+                component_val = float(component_value)
+            except (TypeError, ValueError):
+                issues.append(f"Result #{idx} invalid {component_name}: {component_value}")
+                continue
+
+            if not (0.0 <= component_val <= 100.0):
+                issues.append(f"Result #{idx} {component_name} out of range: {component_val}")
+
     return issues
 
 
@@ -82,6 +109,17 @@ def _check_guardrails(results: List[Dict[str, Any]]) -> List[str]:
     return issues
 
 
+def _check_decision_scores(results: List[Dict[str, Any]]) -> List[str]:
+    issues: List[str] = []
+    for idx, row in enumerate(results, start=1):
+        final_decision = row.get("final_decision", {})
+        if "final_weighted_score" not in final_decision:
+            issues.append(f"Result #{idx} missing final_weighted_score")
+        if "score_breakdown" not in final_decision:
+            issues.append(f"Result #{idx} missing score_breakdown")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Phase 2 quality gates")
     parser.add_argument("--report-json", required=True, help="Path to phase2 report json")
@@ -94,11 +132,16 @@ def main() -> int:
     schema_issues = _check_schema(results)
     score_issues = _check_scores(results)
     guardrail_issues = _check_guardrails(results)
+    decision_score_issues = _check_decision_scores(results)
 
     checks = {
         "output_schema_valid": {"passed": len(schema_issues) == 0, "issues": schema_issues},
         "options_score_range_valid": {"passed": len(score_issues) == 0, "issues": score_issues},
         "guardrails_enforced": {"passed": len(guardrail_issues) == 0, "issues": guardrail_issues},
+        "decision_layer_scores_present": {
+            "passed": len(decision_score_issues) == 0,
+            "issues": decision_score_issues,
+        },
     }
 
     passed = all(section["passed"] for section in checks.values())

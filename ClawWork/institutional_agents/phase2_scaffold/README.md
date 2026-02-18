@@ -44,3 +44,9 @@ This scaffold extends Phase 1 with options-aware scoring while staying isolated.
 ## Notes
 - Paper mode only
 - No integration with live flow yet
+
+## Troubleshooting
+- Use plain file paths in terminal commands. Do not paste markdown links like `[sample_batch_input.json](...)` into bash.
+- If quality checks fail after code updates, regenerate artifacts first:
+	1) python pipeline_runner.py --input sample_batch_input.json --outdir reports --tag phase2_demo
+	2) python phase2_quality_check.py --report-json reports/phase2_demo_report.json --out-json reports/phase2_demo_quality_check.json

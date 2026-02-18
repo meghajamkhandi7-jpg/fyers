@@ -1,0 +1,91 @@
+{
+  "run_tag": "phase2_demo",
+  "input_file": "sample_batch_input.json",
+  "record_count": 3,
+  "summary": {
+    "total_decisions": 3,
+    "final_action_counts": {
+      "BUY_CALL": 1,
+      "BUY_PUT": 1,
+      "NO_TRADE": 1
+    },
+    "final_action_distribution_pct": {
+      "BUY_CALL": 33.33,
+      "BUY_PUT": 33.33,
+      "NO_TRADE": 33.33
+    },
+    "options_signal_counts": {
+      "BULLISH": 1,
+      "BEARISH": 1,
+      "NEUTRAL": 0,
+      "NO_TRADE": 1
+    },
+    "options_veto_pct": 33.33,
+    "average_options_score": 66.5
+  },
+  "results": [
+    {
+      "underlying": "NIFTY50",
+      "momentum_signal": {
+        "action": "BUY_CALL",
+        "confidence": "MEDIUM"
+      },
+      "options_signal": {
+        "signal": "BULLISH",
+        "confidence": "HIGH",
+        "preferred_strike_zone": "OTM_1",
+        "options_score": 83.75,
+        "rationale": "Bullish options profile (score=83.75).",
+        "liquidity_pass": true,
+        "spread_pass": true
+      },
+      "final_decision": {
+        "action": "BUY_CALL",
+        "confidence": "HIGH",
+        "rationale": "Momentum and options signals aligned bullish."
+      }
+    },
+    {
+      "underlying": "BANKNIFTY",
+      "momentum_signal": {
+        "action": "BUY_PUT",
+        "confidence": "MEDIUM"
+      },
+      "options_signal": {
+        "signal": "BEARISH",
+        "confidence": "HIGH",
+        "preferred_strike_zone": "OTM_1",
+        "options_score": 80.0,
+        "rationale": "Bearish options profile (score=80.00).",
+        "liquidity_pass": true,
+        "spread_pass": true
+      },
+      "final_decision": {
+        "action": "BUY_PUT",
+        "confidence": "HIGH",
+        "rationale": "Momentum and options signals aligned bearish."
+      }
+    },
+    {
+      "underlying": "SENSEX",
+      "momentum_signal": {
+        "action": "NO_TRADE",
+        "confidence": "LOW"
+      },
+      "options_signal": {
+        "signal": "NO_TRADE",
+        "confidence": "LOW",
+        "preferred_strike_zone": "NONE",
+        "options_score": 35.75,
+        "rationale": "Liquidity or spread guard failed.",
+        "liquidity_pass": false,
+        "spread_pass": false
+      },
+      "final_decision": {
+        "action": "NO_TRADE",
+        "confidence": "LOW",
+        "rationale": "Options guardrail veto."
+      }
+    }
+  ]
+}

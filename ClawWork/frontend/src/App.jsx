@@ -14,6 +14,7 @@ import { DisplayNamesContext } from './DisplayNamesContext'
 function App() {
   const [agents, setAgents] = useState([])
   const [selectedAgent, setSelectedAgent] = useState(null)
+  const [selectionEpoch, setSelectionEpoch] = useState(0)
   const [hiddenAgents, setHiddenAgents] = useState(new Set())
   const [displayNames, setDisplayNames] = useState({})
   const { lastMessage, connectionStatus } = useWebSocket()
@@ -82,6 +83,11 @@ function App() {
     }
   }, [])
 
+  const handleSelectAgent = useCallback((signature) => {
+    setSelectionEpoch(prev => prev + 1)
+    setSelectedAgent(signature)
+  }, [])
+
   const visibleAgents = agents.filter(a => !hiddenAgents.has(a.signature))
 
   return (
@@ -94,7 +100,7 @@ function App() {
           hiddenAgents={hiddenAgents}
           onUpdateHiddenAgents={updateHiddenAgents}
           selectedAgent={selectedAgent}
-          onSelectAgent={setSelectedAgent}
+          onSelectAgent={handleSelectAgent}
           connectionStatus={connectionStatus}
         />
 
@@ -105,6 +111,7 @@ function App() {
             } />
             <Route path="/dashboard" element={
               <Dashboard
+                key={`dashboard-${selectedAgent || 'none'}-${selectionEpoch}`}
                 agents={visibleAgents}
                 selectedAgent={selectedAgent}
               />
@@ -117,12 +124,14 @@ function App() {
             } />
             <Route path="/work" element={
               <WorkView
+                key={`work-${selectedAgent || 'none'}-${selectionEpoch}`}
                 agents={visibleAgents}
                 selectedAgent={selectedAgent}
               />
             } />
             <Route path="/learning" element={
               <LearningView
+                key={`learning-${selectedAgent || 'none'}-${selectionEpoch}`}
                 agents={visibleAgents}
                 selectedAgent={selectedAgent}
               />

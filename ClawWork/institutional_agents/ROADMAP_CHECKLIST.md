@@ -4,6 +4,8 @@ Goal: Build an institutional-grade decision system in phases **without changing 
 
 Status: ✅ All checklist items completed (2026-02-18).
 
+Post-scaffold integration closure reference: see `INTEGRATION_CHECKLIST.md` and `reports/integration_completion_report_2026-02-18.md`.
+
 ## Phase 0 Starter Pack (Created)
 - [x] Review [PHASE0_INPUT_OUTPUT_SCHEMA.md](PHASE0_INPUT_OUTPUT_SCHEMA.md) (see [reports/phase0_review_signoff_record_2026-02-18.md](reports/phase0_review_signoff_record_2026-02-18.md))
 - [x] Review [PHASE0_RISK_POLICY.md](PHASE0_RISK_POLICY.md) (see [reports/phase0_review_signoff_record_2026-02-18.md](reports/phase0_review_signoff_record_2026-02-18.md))

@@ -499,6 +499,50 @@ async def get_latest_fyers_screener():
     }
 
 
+@app.get("/api/agents/{signature}/institutional-shadow/latest")
+async def get_latest_institutional_shadow(signature: str):
+    """Get latest institutional shadow summary from agent trading screener audit log."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    screener_log = agent_dir / "trading" / "fyers_screener.jsonl"
+    if not screener_log.exists():
+        return {
+            "available": False,
+            "message": "No agent screener audit log found",
+            "signature": signature,
+        }
+
+    latest_payload = None
+    with open(screener_log, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                latest_payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+    if not isinstance(latest_payload, dict):
+        return {
+            "available": False,
+            "message": "No valid screener audit entries found",
+            "signature": signature,
+        }
+
+    shadow = latest_payload.get("institutional_shadow", {})
+    return {
+        "available": True,
+        "signature": signature,
+        "timestamp": latest_payload.get("timestamp"),
+        "date": latest_payload.get("date"),
+        "success": latest_payload.get("success"),
+        "institutional_shadow": shadow if isinstance(shadow, dict) else {},
+    }
+
+
 ARTIFACT_EXTENSIONS = {'.pdf', '.docx', '.xlsx', '.pptx'}
 ARTIFACT_MIME_TYPES = {
     '.pdf': 'application/pdf',

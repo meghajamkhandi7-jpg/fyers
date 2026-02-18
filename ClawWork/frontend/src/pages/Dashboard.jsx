@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { DollarSign, TrendingUp, Activity, AlertCircle, Briefcase, Brain, Wallet } from 'lucide-react'
-import { fetchAgentDetail, fetchAgentEconomic, fetchAgentTasks, fetchLatestFyersScreener } from '../api'
+import { fetchAgentDetail, fetchAgentEconomic, fetchAgentTasks, fetchLatestFyersScreener, fetchLatestInstitutionalShadow } from '../api'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { motion } from 'framer-motion'
 import { useDisplayName } from '../DisplayNamesContext'
@@ -14,6 +14,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
   const [economicData, setEconomicData] = useState(null)
   const [tasksData, setTasksData] = useState(null)
   const [fyersScreener, setFyersScreener] = useState(null)
+  const [institutionalShadow, setInstitutionalShadow] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -22,6 +23,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
       fetchEconomicData()
       fetchAgentTasks(selectedAgent).then(d => setTasksData(d)).catch(() => {})
       fetchLatestFyersScreener().then(d => setFyersScreener(d)).catch(() => setFyersScreener(null))
+      fetchLatestInstitutionalShadow(selectedAgent).then(d => setInstitutionalShadow(d)).catch(() => setInstitutionalShadow(null))
     }
   }, [selectedAgent])
 
@@ -30,6 +32,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
 
     const id = setInterval(() => {
       fetchLatestFyersScreener().then(d => setFyersScreener(d)).catch(() => {})
+      fetchLatestInstitutionalShadow(selectedAgent).then(d => setInstitutionalShadow(d)).catch(() => {})
     }, 15000)
 
     return () => clearInterval(id)
@@ -513,6 +516,52 @@ const Dashboard = ({ agents, selectedAgent }) => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </>
+        )}
+      </motion.div>
+
+      {/* Institutional Shadow */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.38 }}
+        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Institutional Shadow (Latest)</h3>
+          {institutionalShadow?.available && (
+            <span className="text-xs text-gray-500">{institutionalShadow.date || institutionalShadow.timestamp}</span>
+          )}
+        </div>
+
+        {!institutionalShadow?.available ? (
+          <div className="text-sm text-gray-500">
+            No institutional shadow audit found yet for this agent.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <div className="rounded-lg bg-gray-50 p-3 border border-gray-100">
+                <p className="text-xs text-gray-500">Status</p>
+                <p className="text-base font-semibold text-gray-900">{institutionalShadow.institutional_shadow?.status || 'NA'}</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3 border border-gray-100">
+                <p className="text-xs text-gray-500">Records</p>
+                <p className="text-base font-semibold text-gray-900">{institutionalShadow.institutional_shadow?.record_count ?? 0}</p>
+              </div>
+              <div className="rounded-lg bg-green-50 p-3 border border-green-100">
+                <p className="text-xs text-green-700">Agree</p>
+                <p className="text-base font-semibold text-green-700">{institutionalShadow.institutional_shadow?.agree_count ?? 0}</p>
+              </div>
+              <div className="rounded-lg bg-red-50 p-3 border border-red-100">
+                <p className="text-xs text-red-700">Disagree</p>
+                <p className="text-base font-semibold text-red-700">{institutionalShadow.institutional_shadow?.disagree_count ?? 0}</p>
+              </div>
+              <div className="rounded-lg bg-blue-50 p-3 border border-blue-100">
+                <p className="text-xs text-blue-700">Screener OK</p>
+                <p className="text-base font-semibold text-blue-700">{institutionalShadow.success ? 'YES' : 'NO'}</p>
+              </div>
             </div>
           </>
         )}

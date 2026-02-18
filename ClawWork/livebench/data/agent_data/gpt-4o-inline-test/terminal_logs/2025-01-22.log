@@ -9,7 +9,7 @@ Agent: gpt-4o-inline-test
    Agent: gpt-4o-inline-test
 ============================================================
 
-✅ Task state updated: inline-001
+✅ Task state updated: inline-003
 
 🔄 Iteration 1/15
 ⚠️ Attempt 1 failed (AuthenticationError), retrying in 0.5s...
@@ -28,15 +28,30 @@ Agent: gpt-4o-inline-test
 🔄 WRAP-UP WORKFLOW: Collecting and submitting artifacts
 ============================================================
 🔍 Listing artifacts in E2B sandbox...
-❌ Error listing artifacts: No module named 'e2b_code_interpreter'
+❌ Error listing artifacts: Failed to create E2B sandbox: 401: Unauthorized, please check your credentials. - authorization header is malformed
    Traceback: Traceback (most recent call last):
-  File "/workspaces/fyers/ClawWork/livebench/agent/wrapup_workflow.py", line 99, in _list_artifacts_node
-    from livebench.tools.productivity.code_execution_sandbox import SessionSandbox
-  File "/workspaces/fyers/ClawWork/livebench/tools/productivity/__init__.py", line 15, in <module>
-    from .code_execution_sandbox import execute_code as execute_code_sandbox
-  File "/workspaces/fyers/ClawWork/livebench/tools/productivity/code_execution_sandbox.py", line 7, in <module>
-    from e2b_code_interpreter import Sandbox
-ModuleNotFoundError: No module named 'e2b_code_interpreter'
+  File "/workspaces/fyers/ClawWork/livebench/tools/productivity/code_execution_sandbox.py", line 77, in get_or_create_sandbox
+    self.sandbox = Sandbox.create("gdpval-workspace", timeout=timeout)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.12/site-packages/e2b/sandbox_sync/main.py", line 188, in create
+    sandbox = cls._create(
+              ^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.12/site-packages/e2b/sandbox_sync/main.py", line 693, in _create
+    response = SandboxApi._create_sandbox(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.12/site-packages/e2b/sandbox_sync/sandbox_api.py", line 182, in _create_sandbox
+    raise handle_api_exception(res)
+e2b.exceptions.AuthenticationException: 401: Unauthorized, please check your credentials. - authorization header is malformed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspaces/fyers/ClawWork/livebench/agent/wrapup_workflow.py", line 105, in _list_artifacts_node
+    sandbox = session_sandbox.get_or_create_sandbox()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/fyers/ClawWork/livebench/tools/productivity/code_execution_sandbox.py", line 81, in get_or_create_sandbox
+    raise RuntimeError(f"Failed to create E2B sandbox: {str(e)}")
+RuntimeError: Failed to create E2B sandbox: 401: Unauthorized, please check your credentials. - authorization header is malformed
 
    No artifacts found to submit
 

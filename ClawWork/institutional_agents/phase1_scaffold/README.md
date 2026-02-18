@@ -101,6 +101,24 @@ python phase1_signoff_generator.py --tag phase1_demo --outdir reports
 Output:
 - `reports/phase1_demo_phase1_signoff.md`
 
+## Validate Phase 1 Quality Gates
+```bash
+cd /workspaces/fyers/ClawWork/institutional_agents/phase1_scaffold
+python phase1_quality_check.py \
+	--input-csv sample_batch_input.csv \
+	--pipeline-report-json reports/phase1_demo_pipeline_report.json \
+	--out-json reports/phase1_demo_quality_check.json
+```
+
+Checks covered:
+- Data completeness (`>=95%`)
+- Output schema validity
+- Risk guardrails populated
+
+Troubleshooting:
+- In terminal, use plain file paths only.
+- Do NOT paste markdown-formatted links like `[sample_batch_input.csv](...)` into bash.
+
 ## Notes
 - Paper mode only
 - No order placement

@@ -18,12 +18,56 @@ const Dashboard = ({ agents, selectedAgent }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (selectedAgent) {
-      fetchAgentDetails()
-      fetchEconomicData()
-      fetchAgentTasks(selectedAgent).then(d => setTasksData(d)).catch(() => {})
-      fetchLatestFyersScreener().then(d => setFyersScreener(d)).catch(() => setFyersScreener(null))
-      fetchLatestInstitutionalShadow(selectedAgent).then(d => setInstitutionalShadow(d)).catch(() => setInstitutionalShadow(null))
+    let cancelled = false
+
+    if (!selectedAgent) {
+      setAgentDetails(null)
+      setEconomicData(null)
+      setTasksData(null)
+      setFyersScreener(null)
+      setInstitutionalShadow(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    const loadSelectedAgent = async () => {
+      try {
+        setLoading(true)
+        setAgentDetails(null)
+        setEconomicData(null)
+        setTasksData(null)
+        setInstitutionalShadow(null)
+
+        const [details, economic, tasks, screener, shadow] = await Promise.allSettled([
+          fetchAgentDetail(selectedAgent),
+          fetchAgentEconomic(selectedAgent),
+          fetchAgentTasks(selectedAgent),
+          fetchLatestFyersScreener(),
+          fetchLatestInstitutionalShadow(selectedAgent),
+        ])
+
+        if (cancelled) return
+
+        setAgentDetails(details.status === 'fulfilled' ? details.value : null)
+        setEconomicData(economic.status === 'fulfilled' ? economic.value : null)
+        setTasksData(tasks.status === 'fulfilled' ? tasks.value : null)
+        setFyersScreener(screener.status === 'fulfilled' ? screener.value : null)
+        setInstitutionalShadow(shadow.status === 'fulfilled' ? shadow.value : null)
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading selected agent:', error)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadSelectedAgent()
+
+    return () => {
+      cancelled = true
     }
   }, [selectedAgent])
 
@@ -37,27 +81,6 @@ const Dashboard = ({ agents, selectedAgent }) => {
 
     return () => clearInterval(id)
   }, [selectedAgent])
-
-  const fetchAgentDetails = async () => {
-    if (!selectedAgent) return
-    try {
-      setLoading(true)
-      setAgentDetails(await fetchAgentDetail(selectedAgent))
-    } catch (error) {
-      console.error('Error fetching agent details:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchEconomicData = async () => {
-    if (!selectedAgent) return
-    try {
-      setEconomicData(await fetchAgentEconomic(selectedAgent))
-    } catch (error) {
-      console.error('Error fetching economic data:', error)
-    }
-  }
 
   if (!selectedAgent) {
     return (

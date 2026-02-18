@@ -69,7 +69,7 @@ function App() {
 
     if (message.type === 'balance_update' || message.type === 'activity_update') {
       // Refresh agents when updates come in
-      fetchAgents()
+      fetchAgentsData()
     }
   }
 

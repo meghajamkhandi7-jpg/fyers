@@ -3,6 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { Home, Briefcase, Brain, Activity, Trophy, FolderOpen, Settings, X, Check, Star, Github } from 'lucide-react'
 import { useDisplayName } from '../DisplayNamesContext'
 
+const formatINR = (value, digits = 2) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+
 const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, selectedAgent, onSelectAgent, connectionStatus }) => {
   const location = useLocation()
   const dn = useDisplayName()
@@ -211,7 +214,7 @@ const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, select
                     {dn(agent.signature)}
                   </p>
                   <p className="text-xs text-gray-500">
-                    ${agent.balance?.toFixed(2) || '0.00'}
+                    {formatINR(agent.balance || 0)}
                   </p>
                 </div>
               </button>

@@ -6,6 +6,8 @@ import { EXT_CONFIG, getFileIcon, renderFilePreview } from '../components/FilePr
 
 const TASKS_PER_PAGE = 20
 const QUALITY_CLIFF = 0.6
+const formatINR = (value, digits = 2) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -457,7 +459,7 @@ const WorkView = ({ agents, selectedAgent }) => {
                       <DollarSign className="w-4 h-4 text-gray-400" />
                       <span className="text-gray-600">
                         Value: <span className="font-medium text-gray-800">
-                          ${(task.task_value_usd ?? task.max_payment ?? 50).toFixed(2)}
+                          {formatINR(task.task_value_usd ?? task.max_payment ?? 50)}
                         </span>
                       </span>
                     </div>
@@ -467,7 +469,7 @@ const WorkView = ({ agents, selectedAgent }) => {
                       <div className="flex items-center space-x-2">
                         <DollarSign className="w-4 h-4 text-green-500" />
                         <span className="font-semibold text-green-600">
-                          Earned: ${task.payment.toFixed(2)}
+                          Earned: {formatINR(task.payment)}
                         </span>
                       </div>
                       {task.evaluation_score !== null && task.evaluation_score !== undefined && (
@@ -630,7 +632,7 @@ const WorkView = ({ agents, selectedAgent }) => {
                     <div>
                       <p className="text-sm font-medium text-gray-700">Task Market Value</p>
                       <p className="text-lg font-bold text-gray-900">
-                        ${(selectedTask.task_value_usd ?? selectedTask.max_payment ?? 50).toFixed(2)}
+                        {formatINR(selectedTask.task_value_usd ?? selectedTask.max_payment ?? 50)}
                       </p>
                     </div>
                   </div>
@@ -649,7 +651,7 @@ const WorkView = ({ agents, selectedAgent }) => {
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Payment Awarded</span>
                           <span className="text-lg font-bold text-green-600">
-                            ${selectedTask.evaluation.payment.toFixed(2)}
+                            {formatINR(selectedTask.evaluation.payment)}
                           </span>
                         </div>
                         {selectedTask.evaluation_score !== null && selectedTask.evaluation_score !== undefined && (

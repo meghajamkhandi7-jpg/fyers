@@ -5,6 +5,9 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { motion } from 'framer-motion'
 import { useDisplayName } from '../DisplayNamesContext'
 
+const formatINR = (value, digits = 2) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+
 const Dashboard = ({ agents, selectedAgent }) => {
   const dn = useDisplayName()
   const [agentDetails, setAgentDetails] = useState(null)
@@ -182,13 +185,13 @@ const Dashboard = ({ agents, selectedAgent }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
         <MetricCard
           title="Starter Asset"
-          value={`$${balance_history?.[0]?.balance?.toFixed(2) || '0.00'}`}
+          value={formatINR(balance_history?.[0]?.balance || 0)}
           icon={<Wallet className="w-6 h-6" />}
           color="gray"
         />
         <MetricCard
           title="Balance"
-          value={`$${current_status.balance?.toFixed(2) || '0.00'}`}
+          value={formatINR(current_status.balance || 0)}
           icon={<DollarSign className="w-6 h-6" />}
           color="blue"
           trend={balance_history?.length > 1 ?
@@ -198,19 +201,19 @@ const Dashboard = ({ agents, selectedAgent }) => {
         />
         <MetricCard
           title="Net Worth"
-          value={`$${current_status.net_worth?.toFixed(2) || '0.00'}`}
+          value={formatINR(current_status.net_worth || 0)}
           icon={<TrendingUp className="w-6 h-6" />}
           color="green"
         />
         <MetricCard
           title="Total Token Cost"
-          value={`$${current_status.total_token_cost?.toFixed(2) || '0.00'}`}
+          value={formatINR(current_status.total_token_cost || 0)}
           icon={<Activity className="w-6 h-6" />}
           color="red"
         />
         <MetricCard
           title="Work Income"
-          value={`$${current_status.total_work_income?.toFixed(2) || '0.00'}`}
+          value={formatINR(current_status.total_work_income || 0)}
           icon={<Briefcase className="w-6 h-6" />}
           color="purple"
         />
@@ -277,7 +280,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
                 height={60}
                 tickFormatter={(d) => { const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}` : d }}
               />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v.toLocaleString()}`} />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => formatINR(v, 0)} />
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'white',
@@ -286,7 +289,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                 }}
                 labelFormatter={(d) => `Date: ${d}`}
-                formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Balance']}
+                formatter={(value) => [formatINR(value), 'Balance']}
               />
               <Area
                 type="monotone"
@@ -325,7 +328,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={v => `$${v.toLocaleString()}`}
+                  tickFormatter={v => formatINR(v, 0)}
                 />
                 <YAxis
                   type="category"
@@ -344,7 +347,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
                   }}
                   formatter={(value, name) => {
                     const labels = { earned: 'Earned', failed: 'Failed & wasted', untapped: 'Untapped potential' }
-                    return [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, labels[name] || name]
+                    return [formatINR(value), labels[name] || name]
                   }}
                   labelFormatter={(label, payload) => {
                     const d = payload?.[0]?.payload
@@ -397,6 +400,79 @@ const Dashboard = ({ agents, selectedAgent }) => {
               <div className="rounded-lg bg-red-50 p-3 border border-red-100">
                 <p className="text-xs text-red-700">Avoid</p>
                 <p className="text-lg font-semibold text-red-700">{fyersScreener.data?.summary?.avoid ?? 0}</p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Index + Strike Recommender</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div className="rounded-lg bg-gray-50 p-3 border border-gray-100">
+                  <p className="text-xs text-gray-500">Tracked</p>
+                  <p className="text-base font-semibold text-gray-900">{fyersScreener.data?.index_summary?.tracked ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-3 border border-green-100">
+                  <p className="text-xs text-green-700">Bullish</p>
+                  <p className="text-base font-semibold text-green-700">{fyersScreener.data?.index_summary?.bullish ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-red-50 p-3 border border-red-100">
+                  <p className="text-xs text-red-700">Bearish</p>
+                  <p className="text-base font-semibold text-red-700">{fyersScreener.data?.index_summary?.bearish ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-blue-50 p-3 border border-blue-100">
+                  <p className="text-xs text-blue-700">Neutral</p>
+                  <p className="text-base font-semibold text-blue-700">{fyersScreener.data?.index_summary?.neutral ?? 0}</p>
+                </div>
+              </div>
+
+              {fyersScreener.data?.index_error && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-2">
+                  Index recommendation unavailable: {fyersScreener.data?.index_error}
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-gray-500">
+                      <th className="text-left py-2 pr-3 font-medium">Index</th>
+                      <th className="text-left py-2 pr-3 font-medium">Bias</th>
+                      <th className="text-left py-2 pr-3 font-medium">Side</th>
+                      <th className="text-right py-2 pr-3 font-medium">LTP</th>
+                      <th className="text-right py-2 pr-3 font-medium">Change %</th>
+                      <th className="text-right py-2 pr-3 font-medium">Preferred Strike</th>
+                      <th className="text-right py-2 pr-3 font-medium">Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(fyersScreener.data?.index_recommendations || []).map((row, idx) => (
+                      <tr key={`${row.index}-${idx}`} className="border-b border-gray-50">
+                        <td className="py-2 pr-3 text-gray-900 font-medium">{row.index}</td>
+                        <td className="py-2 pr-3">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            row.signal === 'BULLISH'
+                              ? 'bg-green-100 text-green-700'
+                              : row.signal === 'BEARISH'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {row.signal}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-gray-700">{row.option_side}</td>
+                        <td className="py-2 pr-3 text-right text-gray-700">
+                          {typeof row.ltp === 'number' ? row.ltp.toFixed(2) : 'NA'}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-700">
+                          {typeof row.change_pct === 'number' ? `${row.change_pct.toFixed(2)}%` : 'NA'}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-700">
+                          {row.preferred_strike || 'WAIT'}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-700">{row.confidence ?? 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 

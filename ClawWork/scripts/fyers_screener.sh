@@ -65,6 +65,19 @@ for row in result.get("results", [])[:10]:
     ltp_text = "NA" if ltp is None else f"{ltp:.2f}"
     print(f" - {symbol}: {signal} | LTP={ltp_text} | Change={chg_text} | {reason}")
 
+print("\nIndex strike recommendations:")
+for row in result.get("index_recommendations", []):
+    side = row.get("option_side")
+    strike = row.get("preferred_strike")
+    confidence = row.get("confidence")
+    chg = row.get("change_pct")
+    chg_text = "NA" if chg is None else f"{chg:.2f}%"
+    strike_text = "WAIT" if strike is None else str(strike)
+    print(
+        f" - {row.get('index')}: {row.get('signal')} | Side={side} | "
+        f"Change={chg_text} | Preferred Strike={strike_text} | Confidence={confidence}%"
+    )
+
 out_dir = Path("livebench/data/fyers")
 out_dir.mkdir(parents=True, exist_ok=True)
 out_file = out_dir / f"screener_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

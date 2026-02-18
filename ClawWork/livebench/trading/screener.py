@@ -17,6 +17,22 @@ class ScreenerConfig:
     risk_pct: float = 1.0
     stop_loss_pct: float = 1.0
     target_pct: float = 2.0
+    index_neutral_pct: float = 0.25
+    index_strong_trend_pct: float = 0.8
+
+
+DEFAULT_INDEX_SYMBOLS: Dict[str, str] = {
+    "NIFTY50": "NSE:NIFTY50-INDEX",
+    "BANKNIFTY": "NSE:NIFTYBANK-INDEX",
+    "SENSEX": "BSE:SENSEX-INDEX",
+}
+
+
+DEFAULT_STRIKE_STEPS: Dict[str, int] = {
+    "NIFTY50": 50,
+    "BANKNIFTY": 100,
+    "SENSEX": 100,
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -25,6 +41,16 @@ def _env_float(name: str, default: float) -> float:
         return default
     try:
         return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
     except ValueError:
         return default
 
@@ -38,7 +64,25 @@ def load_screener_config() -> ScreenerConfig:
         risk_pct=_env_float("FYERS_SCREENER_RISK_PCT", 1.0),
         stop_loss_pct=_env_float("FYERS_SCREENER_STOP_LOSS_PCT", 1.0),
         target_pct=_env_float("FYERS_SCREENER_TARGET_PCT", 2.0),
+        index_neutral_pct=_env_float("FYERS_INDEX_NEUTRAL_PCT", 0.25),
+        index_strong_trend_pct=_env_float("FYERS_INDEX_STRONG_TREND_PCT", 0.8),
     )
+
+
+def load_index_symbols() -> Dict[str, str]:
+    mapping = dict(DEFAULT_INDEX_SYMBOLS)
+    mapping["NIFTY50"] = os.getenv("FYERS_INDEX_SYMBOL_NIFTY50", mapping["NIFTY50"])
+    mapping["BANKNIFTY"] = os.getenv("FYERS_INDEX_SYMBOL_BANKNIFTY", mapping["BANKNIFTY"])
+    mapping["SENSEX"] = os.getenv("FYERS_INDEX_SYMBOL_SENSEX", mapping["SENSEX"])
+    return mapping
+
+
+def load_strike_steps() -> Dict[str, int]:
+    return {
+        "NIFTY50": _env_int("FYERS_STRIKE_STEP_NIFTY50", DEFAULT_STRIKE_STEPS["NIFTY50"]),
+        "BANKNIFTY": _env_int("FYERS_STRIKE_STEP_BANKNIFTY", DEFAULT_STRIKE_STEPS["BANKNIFTY"]),
+        "SENSEX": _env_int("FYERS_STRIKE_STEP_SENSEX", DEFAULT_STRIKE_STEPS["SENSEX"]),
+    }
 
 
 def parse_watchlist(watchlist: str | List[str] | None = None) -> List[str]:
@@ -197,6 +241,147 @@ def evaluate_symbols(rows: List[Dict[str, Any]], config: ScreenerConfig) -> List
     return evaluated
 
 
+def _round_to_step(value: float, step: int) -> int:
+    if step <= 0:
+        return int(round(value))
+    return int(round(value / step) * step)
+
+
+def _pick_preferred_moneyness(abs_change_pct: float, strong_trend_pct: float, neutral_pct: float) -> str:
+    if abs_change_pct >= strong_trend_pct:
+        return "ATM_OR_1_OTM"
+    if abs_change_pct >= neutral_pct:
+        return "ATM"
+    return "ATM_OR_1_ITM"
+
+
+def _build_strike_suggestions(
+    index_name: str,
+    index_ltp: float,
+    index_change_pct: float,
+    strike_step: int,
+    config: ScreenerConfig,
+) -> Dict[str, Any]:
+    abs_change = abs(index_change_pct)
+    if index_change_pct >= config.index_neutral_pct:
+        side = "CE"
+        directional_bias = "BULLISH"
+    elif index_change_pct <= -config.index_neutral_pct:
+        side = "PE"
+        directional_bias = "BEARISH"
+    else:
+        side = "NO_TRADE"
+        directional_bias = "NEUTRAL"
+
+    atm = _round_to_step(index_ltp, strike_step)
+    preferred_moneyness = _pick_preferred_moneyness(abs_change, config.index_strong_trend_pct, config.index_neutral_pct)
+
+    if side == "NO_TRADE":
+        preferred_strike = None
+        candidates = []
+        reason = (
+            f"{index_name} is range-bound ({index_change_pct:.2f}%). "
+            f"Wait for breakout beyond ±{config.index_neutral_pct:.2f}%"
+        )
+        confidence = 35
+    else:
+        one_step_otm = atm + strike_step if side == "CE" else atm - strike_step
+        one_step_itm = atm - strike_step if side == "CE" else atm + strike_step
+
+        if preferred_moneyness == "ATM_OR_1_OTM":
+            preferred_strike = one_step_otm
+        elif preferred_moneyness == "ATM":
+            preferred_strike = atm
+        else:
+            preferred_strike = one_step_itm
+
+        candidates = [
+            {"label": "1_ITM", "strike": int(one_step_itm)},
+            {"label": "ATM", "strike": int(atm)},
+            {"label": "1_OTM", "strike": int(one_step_otm)},
+        ]
+        reason = (
+            f"{index_name} shows {directional_bias.lower()} momentum ({index_change_pct:.2f}%). "
+            f"Preferred setup: {preferred_moneyness}"
+        )
+        confidence = int(max(40, min(90, 45 + abs_change * 20)))
+
+    return {
+        "index": index_name,
+        "signal": directional_bias,
+        "option_side": side,
+        "ltp": index_ltp,
+        "change_pct": index_change_pct,
+        "strike_step": strike_step,
+        "atm_strike": int(atm),
+        "preferred_moneyness": preferred_moneyness,
+        "preferred_strike": int(preferred_strike) if preferred_strike is not None else None,
+        "candidate_strikes": candidates,
+        "confidence": confidence,
+        "reason": reason,
+    }
+
+
+def build_index_recommendations(client: Any, config: ScreenerConfig) -> Dict[str, Any]:
+    symbols_map = load_index_symbols()
+    strike_steps = load_strike_steps()
+    ordered_names = ["NIFTY50", "BANKNIFTY", "SENSEX"]
+
+    symbols_csv = ",".join(symbols_map[name] for name in ordered_names if symbols_map.get(name))
+    quote_response = client.quotes(symbols_csv)
+    if not quote_response.get("success"):
+        return {
+            "success": False,
+            "error": quote_response.get("error", "Index quote request failed"),
+            "quotes_response": quote_response,
+            "results": [],
+            "summary": {"tracked": 0, "bullish": 0, "bearish": 0, "neutral": 0},
+        }
+
+    rows = normalize_quote_rows(quote_response)
+    by_symbol = {row.get("symbol"): row for row in rows}
+    recommendations: List[Dict[str, Any]] = []
+
+    for name in ordered_names:
+        symbol = symbols_map.get(name)
+        row = by_symbol.get(symbol)
+        if not row:
+            continue
+
+        ltp = row.get("last_price")
+        change_pct = row.get("change_pct")
+        if ltp is None or change_pct is None:
+            continue
+
+        recommendations.append(
+            _build_strike_suggestions(
+                index_name=name,
+                index_ltp=ltp,
+                index_change_pct=change_pct,
+                strike_step=strike_steps.get(name, DEFAULT_STRIKE_STEPS.get(name, 100)),
+                config=config,
+            )
+        )
+
+    summary = {
+        "tracked": len(recommendations),
+        "bullish": len([r for r in recommendations if r.get("signal") == "BULLISH"]),
+        "bearish": len([r for r in recommendations if r.get("signal") == "BEARISH"]),
+        "neutral": len([r for r in recommendations if r.get("signal") == "NEUTRAL"]),
+    }
+
+    return {
+        "success": True,
+        "symbols": symbols_map,
+        "summary": summary,
+        "results": recommendations,
+        "thresholds": {
+            "neutral_pct": config.index_neutral_pct,
+            "strong_trend_pct": config.index_strong_trend_pct,
+        },
+    }
+
+
 def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[str, Any]:
     symbols = parse_watchlist(watchlist)
     if not symbols:
@@ -218,6 +403,7 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
     config = load_screener_config()
     rows = normalize_quote_rows(quote_response)
     evaluated = evaluate_symbols(rows, config)
+    index_recommendations = build_index_recommendations(client=client, config=config)
 
     buy_candidates = [item for item in evaluated if item.get("signal") == "BUY_CANDIDATE"]
     avoid = [item for item in evaluated if item.get("signal") == "AVOID"]
@@ -234,5 +420,10 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
         },
         "config": asdict(config),
         "results": evaluated,
+        "index_recommendations": index_recommendations.get("results", []),
+        "index_summary": index_recommendations.get("summary", {}),
+        "index_thresholds": index_recommendations.get("thresholds", {}),
+        "index_symbols": index_recommendations.get("symbols", {}),
+        "index_error": None if index_recommendations.get("success") else index_recommendations.get("error"),
         "message": f"Screener completed: {len(buy_candidates)} buy candidate(s), {len(watch)} watch, {len(avoid)} avoid",
     }

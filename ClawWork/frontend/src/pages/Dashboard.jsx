@@ -16,6 +16,10 @@ const Dashboard = ({ agents, selectedAgent }) => {
   const [fyersScreener, setFyersScreener] = useState(null)
   const [institutionalShadow, setInstitutionalShadow] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [resultsView, setResultsView] = useState('few')
+  const [basketFilter, setBasketFilter] = useState('ALL')
+  const [signalFilter, setSignalFilter] = useState('ALL')
+  const [signalSort, setSignalSort] = useState('default')
 
   useEffect(() => {
     let cancelled = false
@@ -189,6 +193,49 @@ const Dashboard = ({ agents, selectedAgent }) => {
       }))
       .sort((a, b) => b.earned - a.earned)
   })()
+
+  const screenerResults = fyersScreener?.data?.results || []
+  const watchlistBaskets = fyersScreener?.data?.watchlist_baskets || {}
+  const basketOptions = ['SENSEX', 'NIFTY50', 'BANKNIFTY']
+  const basketFilteredResults = basketFilter === 'ALL'
+    ? screenerResults
+    : screenerResults.filter((row) => (watchlistBaskets[basketFilter] || []).includes(row.symbol))
+
+  const signalCounts = basketFilteredResults.reduce((acc, row) => {
+    if (!row?.signal) return acc
+    acc[row.signal] = (acc[row.signal] || 0) + 1
+    return acc
+  }, {})
+  const availableSignals = Object.keys(signalCounts)
+  const effectiveSignalFilter = signalFilter !== 'ALL' && !availableSignals.includes(signalFilter)
+    ? 'ALL'
+    : signalFilter
+  const filteredResults = effectiveSignalFilter === 'ALL'
+    ? basketFilteredResults
+    : basketFilteredResults.filter((row) => row.signal === effectiveSignalFilter)
+  const sortedResults = [...filteredResults]
+
+  const basketCounts = basketOptions.reduce((acc, basket) => {
+    acc[basket] = (watchlistBaskets[basket] || []).length
+    return acc
+  }, { ALL: screenerResults.length })
+
+  if (signalSort === 'signal') {
+    const signalPriority = { BUY_CANDIDATE: 0, WATCH: 1, AVOID: 2 }
+    sortedResults.sort((a, b) => {
+      const priorityA = signalPriority[a.signal] ?? 99
+      const priorityB = signalPriority[b.signal] ?? 99
+      if (priorityA !== priorityB) return priorityA - priorityB
+      return (a.symbol || '').localeCompare(b.symbol || '')
+    })
+  }
+
+  const visibleCount = resultsView === 'few'
+    ? 8
+    : resultsView === 'more'
+      ? 20
+      : sortedResults.length
+  const visibleResults = sortedResults.slice(0, visibleCount)
 
   return (
     <div className="p-8 space-y-6">
@@ -559,10 +606,127 @@ const Dashboard = ({ agents, selectedAgent }) => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 bg-white/95 px-2 py-2 backdrop-blur">
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span className="font-medium">View:</span>
+                <button
+                  type="button"
+                  onClick={() => setResultsView('few')}
+                  className={`px-2.5 py-1 rounded border ${resultsView === 'few' ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Few
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResultsView('more')}
+                  className={`px-2.5 py-1 rounded border ${resultsView === 'more' ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Little More
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResultsView('full')}
+                  className={`px-2.5 py-1 rounded border ${resultsView === 'full' ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Full
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <label className="font-medium" htmlFor="basket-filter">Basket:</label>
+                <select
+                  id="basket-filter"
+                  value={basketFilter}
+                  onChange={(e) => setBasketFilter(e.target.value)}
+                  className="px-2 py-1 rounded border border-gray-200 bg-white text-gray-700"
+                >
+                  <option value="ALL">All ({basketCounts.ALL || 0})</option>
+                  {basketOptions.map((basket) => (
+                    <option key={basket} value={basket}>{basket} ({basketCounts[basket] || 0})</option>
+                  ))}
+                </select>
+
+                <label className="font-medium" htmlFor="signal-filter">Filter Signal:</label>
+                <select
+                  id="signal-filter"
+                  value={effectiveSignalFilter}
+                  onChange={(e) => setSignalFilter(e.target.value)}
+                  className="px-2 py-1 rounded border border-gray-200 bg-white text-gray-700"
+                >
+                  <option value="ALL">All ({basketFilteredResults.length})</option>
+                  {availableSignals.map((signal) => (
+                    <option key={signal} value={signal}>{signal} ({signalCounts[signal] || 0})</option>
+                  ))}
+                </select>
+
+                <label className="font-medium" htmlFor="signal-sort">Sort:</label>
+                <select
+                  id="signal-sort"
+                  value={signalSort}
+                  onChange={(e) => setSignalSort(e.target.value)}
+                  className="px-2 py-1 rounded border border-gray-200 bg-white text-gray-700"
+                >
+                  <option value="default">Default</option>
+                  <option value="signal">By Signal</option>
+                </select>
+
+                <span className="text-gray-500">Showing {visibleResults.length} of {sortedResults.length}</span>
+              </div>
+
+              <div className="w-full flex flex-wrap items-center gap-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setBasketFilter('ALL')}
+                  className={`px-2 py-1 rounded border ${basketFilter === 'ALL' ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  All Baskets ({basketCounts.ALL || 0})
+                </button>
+                {basketOptions.map((basket) => (
+                  <button
+                    type="button"
+                    key={`basket-chip-${basket}`}
+                    onClick={() => setBasketFilter(basket)}
+                    className={`px-2 py-1 rounded border ${basketFilter === basket ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {basket} ({basketCounts[basket] || 0})
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setSignalFilter('ALL')}
+                  className={`px-2 py-1 rounded border ${effectiveSignalFilter === 'ALL' ? 'bg-gray-100 border-gray-300 text-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  All Signals ({basketFilteredResults.length})
+                </button>
+                {availableSignals.map((signal) => {
+                  const chipClass = signal === 'BUY_CANDIDATE'
+                    ? 'border-green-200 text-green-700 bg-green-50'
+                    : signal === 'AVOID'
+                      ? 'border-red-200 text-red-700 bg-red-50'
+                      : 'border-blue-200 text-blue-700 bg-blue-50'
+
+                  const activeClass = signalFilter === signal ? 'ring-1 ring-gray-300' : ''
+                  const activeSignalClass = effectiveSignalFilter === signal ? 'ring-1 ring-gray-300' : ''
+
+                  return (
+                    <button
+                      type="button"
+                      key={`signal-chip-${signal}`}
+                      onClick={() => setSignalFilter(signal)}
+                      className={`px-2 py-1 rounded border ${chipClass} ${activeSignalClass}`}
+                    >
+                      {signal} ({signalCounts[signal] || 0})
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="max-h-[420px] overflow-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-gray-500">
+                  <tr className="sticky top-0 z-[1] border-b border-gray-100 text-gray-500 bg-white">
                     <th className="text-left py-2 pr-3 font-medium">Symbol</th>
                     <th className="text-left py-2 pr-3 font-medium">Signal</th>
                     <th className="text-right py-2 pr-3 font-medium">LTP</th>
@@ -571,7 +735,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {(fyersScreener.data?.results || []).slice(0, 8).map((row, idx) => (
+                  {visibleResults.map((row, idx) => (
                     <tr key={`${row.symbol}-${idx}`} className="border-b border-gray-50">
                       <td className="py-2 pr-3 text-gray-900 font-medium">{row.symbol}</td>
                       <td className="py-2 pr-3">
@@ -594,6 +758,11 @@ const Dashboard = ({ agents, selectedAgent }) => {
                       <td className="py-2 text-gray-600">{row.reason}</td>
                     </tr>
                   ))}
+                  {visibleResults.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-3 text-center text-gray-500">No stocks match selected signal filter.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

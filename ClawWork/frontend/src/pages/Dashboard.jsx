@@ -437,37 +437,35 @@ const Dashboard = ({ agents, selectedAgent }) => {
             </div>
 
             {(fyersScreener.data?.basket_summaries || []).length > 0 && (
-              <div className="mb-4 overflow-x-auto">
-                <table className="min-w-full text-sm">
+              <div className="mb-3 overflow-x-auto">
+                <table className="min-w-full text-[13px] table-fixed">
+                  <colgroup>
+                    <col className="w-[26%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[20%]" />
+                  </colgroup>
                   <thead>
-                    <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 pr-3 font-medium">Basket</th>
-                      <th className="text-right py-2 pr-3 font-medium">Total</th>
-                      <th className="text-right py-2 pr-3 font-medium">Buy</th>
-                      <th className="text-right py-2 pr-3 font-medium">Watch</th>
-                      <th className="text-right py-2 pr-3 font-medium">Avoid</th>
-                      <th className="text-right py-2 font-medium">Missing Quotes</th>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-1.5 pr-2 font-semibold text-gray-800 bg-gray-100">Basket</th>
+                      <th className="text-center py-1.5 px-1 font-semibold text-gray-800 bg-gray-100">Total</th>
+                      <th className="text-center py-1.5 px-1 font-semibold text-green-800 bg-green-100 whitespace-nowrap">Buy Condition</th>
+                      <th className="text-center py-1.5 px-1 font-semibold text-blue-800 bg-blue-100">Watch</th>
+                      <th className="text-center py-1.5 px-1 font-semibold text-red-800 bg-red-100">Avoid</th>
+                      <th className="text-center py-1.5 px-1 font-semibold text-amber-800 bg-amber-100 whitespace-nowrap">Missing Quotes</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(fyersScreener.data?.basket_summaries || []).map((row, idx) => (
                       <tr key={`${row.basket}-${idx}`} className="border-b border-gray-50">
-                        <td className="py-2 pr-3 text-gray-900 font-medium">{row.basket}</td>
-                        <td className="py-2 pr-3 text-right">
-                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-gray-50 border border-gray-100 px-2.5 py-1 text-gray-800 font-medium">{row.total ?? 0}</span>
-                        </td>
-                        <td className="py-2 pr-3 text-right">
-                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-green-50 border border-green-100 px-2.5 py-1 text-green-700 font-medium">{row.buy_candidates ?? 0}</span>
-                        </td>
-                        <td className="py-2 pr-3 text-right">
-                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1 text-blue-700 font-medium">{row.watch ?? 0}</span>
-                        </td>
-                        <td className="py-2 pr-3 text-right">
-                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-red-50 border border-red-100 px-2.5 py-1 text-red-700 font-medium">{row.avoid ?? 0}</span>
-                        </td>
-                        <td className="py-2 text-right">
-                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1 text-amber-700 font-medium">{row.missing_quotes ?? 0}</span>
-                        </td>
+                        <td className="py-1.5 pr-2 text-gray-900 font-semibold tracking-wide">{row.basket}</td>
+                        <td className="py-1.5 px-2 text-center bg-gray-50 text-gray-800 font-semibold">{row.total ?? 0}</td>
+                        <td className="py-1.5 px-2 text-center bg-green-50 text-green-700 font-semibold">{row.buy_candidates ?? 0}</td>
+                        <td className="py-1.5 px-2 text-center bg-blue-50 text-blue-700 font-semibold">{row.watch ?? 0}</td>
+                        <td className="py-1.5 px-2 text-center bg-red-50 text-red-700 font-semibold">{row.avoid ?? 0}</td>
+                        <td className="py-1.5 px-2 text-center bg-amber-50 text-amber-700 font-semibold">{row.missing_quotes ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>

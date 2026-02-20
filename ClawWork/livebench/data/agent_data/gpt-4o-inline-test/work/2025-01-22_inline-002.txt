@@ -1,0 +1,84 @@
+**12-Week Python Programming Course Curriculum**
+
+**Learning Objectives:**
+1. Understand the basics of programming and Python syntax.
+2. Develop problem-solving skills using Python.
+3. Create basic scripts and tools using Python.
+4. Learn to work with data using Python libraries.
+5. Develop a small project using Python.
+
+**Weekly Breakdown:**
+
+**Week 1: Introduction to Python**
+- Topics: Overview of Programming, Introduction to Python, Setting up Python environment
+- Hands-on Project: Simple Hello World program
+- Assessment: Quiz on programming basics
+- Resources: Python.org, Automate the Boring Stuff with Python by Al Sweigart
+
+**Week 2: Variables and Data Types**
+- Topics: Understanding Variables, Data Types in Python
+- Hands-on Project: Calculator Program
+- Assessment: Exercise on variable manipulation
+- Resources: Real Python tutorials
+
+**Week 3: Control Structures**
+- Topics: Conditional Statements, Loops
+- Hands-on Project: Temperature Converter
+- Assessment: Code challenge on loops
+- Resources: Python Documentation
+
+**Week 4: Functions**
+- Topics: Writing Functions, Scope, and Arguments
+- Hands-on Project: Number Guessing Game
+- Assessment: Function-writing exercises
+- Resources: "Learn Python the Hard Way" by Zed A. Shaw
+
+**Week 5: Data Structures**
+- Topics: Lists, Tuples, and Dictionaries
+- Hands-on Project: Contact Book Application
+- Assessment: Data structure manipulation challenge
+- Resources: CS50 Python lectures
+
+**Week 6: Working with Files**
+- Topics: Reading and Writing Files, File Handling
+- Hands-on Project: Simple Text Editor
+- Assessment: File operations quiz
+- Resources: Python tutorials on file operations
+
+**Week 7: Error and Exception Handling**
+- Topics: Try, Except, and Finally blocks
+- Hands-on Project: Error Handling in Applications
+- Assessment: Error handling exercises
+- Resources: Codecademy Python course
+
+**Week 8: Object-Oriented Programming**
+- Topics: Classes and Objects, Inheritance, and Polymorphism
+- Hands-on Project: Simple Bank System
+- Assessment: OOP concepts quiz
+- Resources: Python OOP tutorial on YouTube
+
+**Week 9: Modules and Packages**
+- Topics: Importing Libraries, Creating Modules
+- Hands-on Project: Modularized To-Do List
+- Assessment: Module usage exercises
+- Resources: Python Books by Mark Lutz
+
+**Week 10: Introduction to Libraries**
+- Topics: Exploring Python Libraries (e.g., NumPy, Pandas)
+- Hands-on Project: Data Analysis Task
+- Assessment: Data manipulation exercise using Pandas
+- Resources: Kaggle Python scripts
+
+**Week 11: GUI Development with Tkinter**
+- Topics: Basic GUI Building with Tkinter
+- Hands-on Project: Simple GUI Calculator
+- Assessment: Building a GUI component
+- Resources: Tkinter documentation
+
+**Week 12: Final Project and Review**
+- Topics: Complete a project using learned skills
+- Hands-on Project: Developing a Personal Project
+- Assessment: Project presentation and peer review
+- Resources: Course materials review, continuous learning on platforms like Coursera and edX
+
+This document is designed to provide students with a comprehensive, structured, and engaging Python learning experience. The focus is on practical applications and projects to ensure solid grounding in the basics of Python programming.

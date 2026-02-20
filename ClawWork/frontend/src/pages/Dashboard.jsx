@@ -399,9 +399,16 @@ const Dashboard = ({ agents, selectedAgent }) => {
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Latest FYERS Screener</h3>
-          {fyersScreener?.available && (
-            <span className="text-xs text-gray-500">{fyersScreener.file}</span>
-          )}
+          <div className="flex items-center gap-2">
+            {fyersScreener?.available && (fyersScreener.data?.missing_quote_symbols || []).length > 0 && (
+              <span className="text-[11px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
+                {(fyersScreener.data?.missing_quote_symbols || []).length} missing quotes
+              </span>
+            )}
+            {fyersScreener?.available && (
+              <span className="text-xs text-gray-500">{fyersScreener.file}</span>
+            )}
+          </div>
         </div>
 
         {!fyersScreener?.available ? (
@@ -428,6 +435,19 @@ const Dashboard = ({ agents, selectedAgent }) => {
                 <p className="text-lg font-semibold text-red-700">{fyersScreener.data?.summary?.avoid ?? 0}</p>
               </div>
             </div>
+
+            {((fyersScreener.data?.warnings || []).length > 0 || (fyersScreener.data?.missing_quote_symbols || []).length > 0) && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-4">
+                {(fyersScreener.data?.warnings || []).map((warning, idx) => (
+                  <p key={`fyers-warning-${idx}`}>{warning}</p>
+                ))}
+                {(fyersScreener.data?.missing_quote_symbols || []).length > 0 && (
+                  <p>
+                    Missing symbols: {(fyersScreener.data?.missing_quote_symbols || []).join(', ')}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-900 mb-2">Index + Strike Recommender</h4>

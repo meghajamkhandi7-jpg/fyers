@@ -47,6 +47,15 @@ Set your watchlist (Indian symbols):
 FYERS_WATCHLIST=NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:SBIN-EQ
 ```
 
+You can also provide company-name style entries (for example `NSE:Reliance Industries-EQ`);
+the screener now auto-normalizes common names to FYERS tradable symbols.
+
+Optional: add custom alias overrides in `.env` (JSON object):
+
+```dotenv
+FYERS_WATCHLIST_ALIASES={"Reliance Industries":"RELIANCE","Larsen & Toubro":"LT"}
+```
+
 ---
 
 ## 3) Generate/refresh FYERS access token
@@ -80,15 +89,26 @@ cd /workspaces/fyers/ClawWork
 bash ./start_dashboard.sh
 ```
 
+This now starts backend + frontend + FYERS screener loop together.
+
+Optional controls:
+
+```bash
+cd /workspaces/fyers/ClawWork
+SCREENER_INTERVAL_SECONDS=60 bash ./start_dashboard.sh
+```
+
+```bash
+cd /workspaces/fyers/ClawWork
+SCREENER_ENABLED=0 bash ./start_dashboard.sh
+```
+
 Access:
 
 - Dashboard: `http://localhost:3000`
 - API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
 
-> If you are in Codespaces, use the forwarded 3000/8000 URLs.
-
----
 
 ## 6) Run agent session (optional for LiveBench data)
 
@@ -111,6 +131,11 @@ Use terminal 3:
 cd /workspaces/fyers/ClawWork
 bash ./scripts/fyers_screener.sh
 ```
+
+Use this only for manual one-off runs (the dashboard startup already runs it in a loop).
+
+If any requested symbols do not return quote rows, the script now prints a `Warnings` section
+and includes `missing_quote_symbols` in the saved JSON.
 
 Expected output includes:
 

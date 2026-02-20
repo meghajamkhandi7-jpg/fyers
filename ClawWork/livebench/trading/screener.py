@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,41 @@ DEFAULT_STRIKE_STEPS: Dict[str, int] = {
     "NIFTY50": 50,
     "BANKNIFTY": 100,
     "SENSEX": 100,
+}
+
+
+WATCHLIST_SYMBOL_ALIASES: Dict[str, str] = {
+    "reliance industries": "RELIANCE",
+    "hdfc bank": "HDFCBANK",
+    "tata consultancy services": "TCS",
+    "infosys": "INFY",
+    "icici bank": "ICICIBANK",
+    "state bank of india": "SBIN",
+    "bharti airtel": "BHARTIARTL",
+    "itc limited": "ITC",
+    "axis bank": "AXISBANK",
+    "bajaj finance": "BAJFINANCE",
+    "bajaj finserv": "BAJAJFINSV",
+    "larsen and toubro": "LT",
+    "maruti suzuki": "MARUTI",
+    "ntpc limited": "NTPC",
+    "power grid corporation of india": "POWERGRID",
+    "sun pharmaceutical industries": "SUNPHARMA",
+    "hindustan unilever": "HINDUNILVR",
+    "mahindra and mahindra": "M&M",
+    "titan company": "TITAN",
+    "ultratech cement": "ULTRACEMCO",
+    "tata steel": "TATASTEEL",
+    "dr reddys laboratories": "DRREDDY",
+    "dr reddy s laboratories": "DRREDDY",
+    "oil and natural gas corporation": "ONGC",
+    "tech mahindra": "TECHM",
+    "nestle india": "NESTLEIND",
+    "indusind bank": "INDUSINDBK",
+    "kotak mahindra bank": "KOTAKBANK",
+    "adani ports and sez": "ADANIPORTS",
+    "bharat electronics limited": "BEL",
+    "trent limited": "TRENT",
 }
 
 
@@ -85,9 +121,76 @@ def load_strike_steps() -> Dict[str, int]:
     }
 
 
+def load_watchlist_aliases() -> Dict[str, str]:
+    aliases = dict(WATCHLIST_SYMBOL_ALIASES)
+    raw = os.getenv("FYERS_WATCHLIST_ALIASES", "")
+    if not raw.strip():
+        return aliases
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return aliases
+
+    if not isinstance(parsed, dict):
+        return aliases
+
+    for name, symbol in parsed.items():
+        key = _company_key(str(name))
+        canonical = re.sub(r"[^A-Za-z0-9&]+", "", str(symbol)).upper()
+        if key and canonical:
+            aliases[key] = canonical
+
+    return aliases
+
+
+def _company_key(value: str) -> str:
+    text = value.strip().strip('"').strip("'")
+    text = text.replace("&", " and ")
+    text = re.sub(r"[^A-Za-z0-9]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return text
+
+
+def _normalize_watchlist_symbol(raw_symbol: str, aliases: Optional[Dict[str, str]] = None) -> str:
+    symbol = raw_symbol.strip().strip('"').strip("'")
+    if not symbol:
+        return ""
+
+    exchange = "NSE"
+    body = symbol
+    if ":" in symbol:
+        maybe_exchange, maybe_body = symbol.split(":", 1)
+        if maybe_exchange.strip():
+            exchange = maybe_exchange.strip().upper()
+        body = maybe_body.strip()
+
+    suffix = "EQ"
+    code = body
+    if "-" in body:
+        maybe_code, maybe_suffix = body.rsplit("-", 1)
+        if maybe_code.strip():
+            code = maybe_code.strip()
+        if maybe_suffix.strip():
+            suffix = maybe_suffix.strip().upper()
+
+    alias_map = aliases or WATCHLIST_SYMBOL_ALIASES
+    alias = alias_map.get(_company_key(code))
+    if alias:
+        canonical = alias
+    else:
+        canonical = re.sub(r"[^A-Za-z0-9&]+", "", code).upper()
+
+    if not canonical:
+        return symbol.upper()
+    return f"{exchange}:{canonical}-{suffix}"
+
+
 def parse_watchlist(watchlist: str | List[str] | None = None) -> List[str]:
+    aliases = load_watchlist_aliases()
+
     if isinstance(watchlist, list):
-        symbols = [str(item).strip() for item in watchlist if str(item).strip()]
+        symbols = [_normalize_watchlist_symbol(str(item), aliases=aliases) for item in watchlist if str(item).strip()]
         return list(dict.fromkeys(symbols))
 
     if isinstance(watchlist, str) and watchlist.strip():
@@ -99,14 +202,14 @@ def parse_watchlist(watchlist: str | List[str] | None = None) -> List[str]:
                     return parse_watchlist(parsed)
             except json.JSONDecodeError:
                 pass
-        symbols = [chunk.strip() for chunk in text.split(",") if chunk.strip()]
+        symbols = [_normalize_watchlist_symbol(chunk, aliases=aliases) for chunk in text.split(",") if chunk.strip()]
         return list(dict.fromkeys(symbols))
 
     env_watchlist = os.getenv("FYERS_WATCHLIST", "")
     if not env_watchlist.strip():
         return []
 
-    symbols = [chunk.strip() for chunk in env_watchlist.split(",") if chunk.strip()]
+    symbols = [_normalize_watchlist_symbol(chunk, aliases=aliases) for chunk in env_watchlist.split(",") if chunk.strip()]
     return list(dict.fromkeys(symbols))
 
 
@@ -402,6 +505,20 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
 
     config = load_screener_config()
     rows = normalize_quote_rows(quote_response)
+    returned_symbols = {
+        str(row.get("symbol", "")).strip().upper()
+        for row in rows
+        if str(row.get("symbol", "")).strip()
+    }
+    missing_quote_symbols = [symbol for symbol in symbols if symbol.upper() not in returned_symbols]
+    warnings: List[str] = []
+    if missing_quote_symbols:
+        preview = ", ".join(missing_quote_symbols[:10])
+        suffix = " ..." if len(missing_quote_symbols) > 10 else ""
+        warnings.append(
+            f"No quote rows returned for {len(missing_quote_symbols)} symbol(s): {preview}{suffix}"
+        )
+
     evaluated = evaluate_symbols(rows, config)
     index_recommendations = build_index_recommendations(client=client, config=config)
 
@@ -425,5 +542,7 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
         "index_thresholds": index_recommendations.get("thresholds", {}),
         "index_symbols": index_recommendations.get("symbols", {}),
         "index_error": None if index_recommendations.get("success") else index_recommendations.get("error"),
+        "missing_quote_symbols": missing_quote_symbols,
+        "warnings": warnings,
         "message": f"Screener completed: {len(buy_candidates)} buy candidate(s), {len(watch)} watch, {len(avoid)} avoid",
     }

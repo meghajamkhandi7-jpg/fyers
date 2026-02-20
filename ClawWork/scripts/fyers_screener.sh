@@ -54,6 +54,16 @@ print(f"   Buy candidates: {summary.get('buy_candidates', 0)}")
 print(f"   Watch: {summary.get('watch', 0)}")
 print(f"   Avoid: {summary.get('avoid', 0)}")
 
+warnings = result.get("warnings") or []
+missing_symbols = result.get("missing_quote_symbols") or []
+if warnings:
+    print("\nWarnings:")
+    for warning in warnings:
+        print(f" - {warning}")
+elif missing_symbols:
+    print("\nWarnings:")
+    print(f" - No quote rows returned for: {', '.join(missing_symbols)}")
+
 print("\nTop signals:")
 for row in result.get("results", [])[:10]:
     symbol = row.get("symbol")

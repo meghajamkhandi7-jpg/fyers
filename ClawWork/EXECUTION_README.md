@@ -183,3 +183,62 @@ Use full command with `cd`:
 ```bash
 cd /workspaces/fyers/ClawWork && bash ./start_dashboard.sh
 ```
+
+### `Incorrect API key provided` when running `run_test_agent.sh`
+
+Your `.env` still contains placeholder values (for example `your-api-key-here`).
+
+Set real values for at least:
+
+- `OPENAI_API_KEY`
+- `WEB_SEARCH_API_KEY`
+
+If `EVALUATION_API_KEY` is set, it must also be real (or unset it to fall back to `OPENAI_API_KEY`).
+
+### `E2B sandbox 401 Unauthorized` during wrap-up
+
+If `E2B_API_KEY` is missing/placeholder, `run_test_agent.sh` now auto-disables wrap-up for that run.
+To enable wrap-up artifact recovery, set a valid `E2B_API_KEY` in `.env`.
+
+### `template 'gdpval-workspace' not found` in E2B
+
+Your E2B account does not have that template alias.
+
+Runtime now tries these in order:
+
+1. `E2B_TEMPLATE_ID` (if set)
+2. `E2B_TEMPLATE_ALIAS` / `E2B_TEMPLATE` (if set)
+3. legacy alias `gdpval-workspace`
+4. E2B default template
+
+If you built a custom template, add one of these to `.env`:
+
+```dotenv
+E2B_TEMPLATE_ID=tpl_xxxxxxxxxxxxx
+# or
+E2B_TEMPLATE_ALIAS=gdpval-workspace
+```
+
+### `Error code: 429` / `You exceeded your current quota`
+
+This is a provider quota/billing limit (not a code crash).
+
+`run_test_agent.sh` now performs an API preflight check and exits early if quota is exhausted.
+
+Fix options:
+
+- Add billing/credits for the key in use.
+- Switch to another provider/key via `OPENAI_API_BASE` + `OPENAI_API_KEY`.
+- Use a lower-cost model in config (for example `gpt-4o-mini`).
+
+Optional: skip preflight with `LIVEBENCH_SKIP_API_PREFLIGHT=1` if you need to debug other parts.
+
+### `No meta-prompt found for occupation ...`
+
+Some inline/demo occupations may not have an exact file in `eval/meta_prompts/`.
+
+Evaluator now falls back automatically to the closest available rubric (mapped or nearest match), so runs continue instead of failing `submit_work`.
+
+If you want strict category matching, add a dedicated JSON rubric file under:
+
+`eval/meta_prompts/<Occupation_Name>.json`

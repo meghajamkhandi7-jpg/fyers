@@ -73,12 +73,56 @@ class SessionSandbox:
         
         # Create new sandbox if needed
         if self.sandbox is None:
-            try:
-                self.sandbox = Sandbox.create("gdpval-workspace", timeout=timeout)
-                self.sandbox_id = getattr(self.sandbox, "id", None)
-                print(f"🔧 Created persistent E2B sandbox: {self.sandbox_id}")
-            except Exception as e:
-                raise RuntimeError(f"Failed to create E2B sandbox: {str(e)}")
+            template_id = (os.getenv("E2B_TEMPLATE_ID") or "").strip()
+            template_alias = (
+                os.getenv("E2B_TEMPLATE_ALIAS")
+                or os.getenv("E2B_TEMPLATE")
+                or ""
+            ).strip()
+
+            template_candidates = []
+            if template_id:
+                template_candidates.append((template_id, "E2B_TEMPLATE_ID"))
+            if template_alias:
+                template_candidates.append((template_alias, "E2B_TEMPLATE_ALIAS"))
+            if not template_candidates:
+                template_candidates.append(("gdpval-workspace", "default alias"))
+
+            last_error: Optional[Exception] = None
+            created = False
+
+            for template_name, source in template_candidates:
+                try:
+                    self.sandbox = Sandbox.create(template_name, timeout=timeout)
+                    self.sandbox_id = getattr(self.sandbox, "id", None)
+                    print(f"🔧 Created persistent E2B sandbox: {self.sandbox_id} (template: {template_name}, source: {source})")
+                    created = True
+                    break
+                except Exception as e:
+                    last_error = e
+                    error_text = str(e).lower()
+                    template_missing = "template" in error_text and "not found" in error_text
+                    if template_missing:
+                        print(f"⚠️ E2B template not found ({template_name} from {source}); trying next fallback...")
+                        continue
+                    raise RuntimeError(f"Failed to create E2B sandbox: {str(e)}")
+
+            if not created:
+                try:
+                    self.sandbox = Sandbox.create(timeout=timeout)
+                    self.sandbox_id = getattr(self.sandbox, "id", None)
+                    print(f"🔧 Created persistent E2B sandbox: {self.sandbox_id} (default template)")
+                    created = True
+                except Exception as default_error:
+                    if last_error is not None:
+                        raise RuntimeError(
+                            f"Failed to create E2B sandbox. Last template error: {str(last_error)}. "
+                            f"Default template error: {str(default_error)}"
+                        )
+                    raise RuntimeError(f"Failed to create E2B sandbox: {str(default_error)}")
+
+            if not created:
+                raise RuntimeError("Failed to create E2B sandbox: unknown error")
         
         return self.sandbox
     

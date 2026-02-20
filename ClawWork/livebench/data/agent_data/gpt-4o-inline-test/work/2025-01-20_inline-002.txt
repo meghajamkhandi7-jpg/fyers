@@ -1,0 +1,80 @@
+**Python for Beginners: A Practical Approach**
+
+**Learning Objectives:**
+1. Understand basic programming concepts and their real-world applications.
+2. Write simple Python programs to solve basic problems.
+3. Utilize Python libraries for practical tasks.
+4. Develop problem-solving skills using Python.
+
+**Weekly Topics and Structure:**
+
+- **Week 1: Introduction to Programming and Python**
+  - Overview of programming languages
+  - Installing Python and setting up the environment
+  - First Python program
+  - Variables and Data Types
+
+- **Week 2: Control Structures and Functions**
+  - Conditional statements (if-else)
+  - Loops (for, while)
+  - Defining and using functions
+
+- **Week 3: Data Collections - Lists, Tuples, and Dictionaries**
+  - Understanding lists and tuples
+  - Operations on lists
+  - Introduction to dictionaries
+
+- **Week 4: Working with Strings and Files**
+  - String manipulation
+  - Reading from and writing to files
+
+- **Week 5: Error Handling and Debugging**
+  - Understanding errors and exceptions
+  - Using try-except blocks
+  - Debugging techniques
+
+- **Week 6: Introduction to Modules and Packages**
+  - Importing modules
+  - Standard Python libraries
+  - Creating and using custom modules
+
+- **Week 7: Advanced Data Structures**
+  - Sets and Dictionaries in depth
+  - Implementing stack and queue in Python
+
+- **Week 8: Introduction to Object-Oriented Programming**
+  - Classes and objects
+  - Inheritance and polymorphism
+
+- **Week 9: Working with Libraries**
+  - Introduction to NumPy for numerical operations
+  - Matplotlib for data visualization
+
+- **Week 10: Web Scraping with Python**
+  - Basics of HTML and the web
+  - Using BeautifulSoup and requests for web scraping
+
+- **Week 11: Final Project Overview and Preparation**
+  - Guidance on choosing a project
+  - Drafting a project proposal
+  - Starting the project
+
+- **Week 12: Project Completion and Assessment**
+  - Project presentation and feedback
+  - Code review and improvements
+  - Course wrap up and next steps in learning
+
+**Hands-on Projects:**
+1. **Week 4 Mini-Project:** Build a simple text-based game.
+2. **Week 7 Mini-Project:** Create a contact manager using file handling.
+3. **Final Project:** Develop a personal budget tracker using Python.
+
+**Assessments:**
+- Quizzes at the end of each week
+- Two mini-projects with peer review
+- Final project evaluation with instructor feedback
+
+**Recommended Resources:**
+- [Official Python Documentation](https://docs.python.org/3/)
+- [Automate the Boring Stuff with Python](https://automatetheboringstuff.com/)
+- Online platforms like Codecademy and Coursera for additional exercises

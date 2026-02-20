@@ -11,6 +11,7 @@ import os
 import json
 import asyncio
 import random
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -61,6 +62,75 @@ def _load_task_values() -> dict:
 
 
 TASK_VALUES = _load_task_values()
+
+
+def _extract_sim_date_from_system(messages: list) -> Optional[str]:
+    for message in messages or []:
+        if message.get("role") != "system":
+            continue
+        content = message.get("content") or ""
+        match = re.search(r"CURRENT ECONOMIC STATUS\s*-\s*(\d{4}-\d{2}-\d{2})", content)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _infer_activity_from_messages(messages: list) -> Optional[str]:
+    combined = "\n".join((msg.get("content") or "") for msg in (messages or []))
+    lowered = combined.lower()
+    if any(token in lowered for token in ["submit_work", "work task", "lending recommendation", "curriculum", "credit risk"]):
+        return "work"
+    if any(token in lowered for token in ["learn(", "learn topic", "research and learn", "save_to_memory"]):
+        return "learn"
+    return None
+
+
+def _extract_reasoning_from_messages(messages: list) -> str:
+    for message in messages or []:
+        if message.get("role") != "assistant":
+            continue
+        content = (message.get("content") or "").strip()
+        if content:
+            compact = " ".join(content.split())
+            return compact[:200]
+    return "Recovered from activity logs"
+
+
+def _load_decisions_from_activity_logs(agent_dir: Path) -> List[dict]:
+    activity_root = agent_dir / "activity_logs"
+    if not activity_root.exists():
+        return []
+
+    recovered = []
+    for log_path in sorted(activity_root.glob("**/log.jsonl")):
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                messages = entry.get("messages", [])
+                activity = _infer_activity_from_messages(messages)
+                if not activity:
+                    continue
+
+                sim_date = _extract_sim_date_from_system(messages)
+                if not sim_date:
+                    timestamp = (entry.get("timestamp") or "")
+                    sim_date = timestamp[:10] if len(timestamp) >= 10 else ""
+
+                recovered.append({
+                    "activity": activity,
+                    "date": sim_date,
+                    "reasoning": _extract_reasoning_from_messages(messages),
+                    "source": "activity_logs",
+                })
+
+    return recovered
 
 # Active WebSocket connections
 active_connections: List[WebSocket] = []
@@ -214,6 +284,8 @@ async def get_agent_details(signature: str):
         with open(decision_file, 'r') as f:
             for line in f:
                 decisions.append(json.loads(line))
+    else:
+        decisions = _load_decisions_from_activity_logs(agent_dir)
 
     # Get evaluation statistics
     evaluations_file = agent_dir / "work" / "evaluations.jsonl"
@@ -271,7 +343,7 @@ async def get_agent_tasks(signature: str):
             for line in f:
                 tasks.append(json.loads(line))
 
-    # Load evaluations indexed by task_id
+    # Load evaluations grouped by task_id (preserve order)
     evaluations = {}
     if evaluations_file.exists():
         with open(evaluations_file, 'r') as f:
@@ -279,7 +351,9 @@ async def get_agent_tasks(signature: str):
                 eval_data = json.loads(line)
                 task_id = eval_data.get("task_id")
                 if task_id:
-                    evaluations[task_id] = eval_data
+                    if task_id not in evaluations:
+                        evaluations[task_id] = []
+                    evaluations[task_id].append(eval_data)
 
     # Merge tasks with evaluations
     for task in tasks:
@@ -287,13 +361,15 @@ async def get_agent_tasks(signature: str):
         # Inject task market value if available
         if task_id and task_id in TASK_VALUES:
             task["task_value_usd"] = TASK_VALUES[task_id]
-        if task_id in evaluations:
-            task["evaluation"] = evaluations[task_id]
+        evaluation_list = evaluations.get(task_id, [])
+        evaluation = evaluation_list.pop(0) if evaluation_list else None
+        if evaluation is not None:
+            task["evaluation"] = evaluation
             task["completed"] = True
-            task["payment"] = evaluations[task_id].get("payment", 0)
-            task["feedback"] = evaluations[task_id].get("feedback", "")
-            task["evaluation_score"] = evaluations[task_id].get("evaluation_score", None)  # 0.0-1.0 scale
-            task["evaluation_method"] = evaluations[task_id].get("evaluation_method", "heuristic")
+            task["payment"] = evaluation.get("payment", 0)
+            task["feedback"] = evaluation.get("feedback", "")
+            task["evaluation_score"] = evaluation.get("evaluation_score", None)  # 0.0-1.0 scale
+            task["evaluation_method"] = evaluation.get("evaluation_method", "heuristic")
         else:
             task["completed"] = False
             task["payment"] = 0

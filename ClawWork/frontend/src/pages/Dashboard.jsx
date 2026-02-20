@@ -824,6 +824,7 @@ const Dashboard = ({ agents, selectedAgent }) => {
         className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200"
       >
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Decisions</h3>
+        <p className="text-xs text-gray-500 mb-3">Badge “recovered” means the entry was restored from activity logs fallback.</p>
         <div className="space-y-3">
           {decisions?.slice(-5).reverse().map((decision, index) => (
             <div
@@ -834,7 +835,14 @@ const Dashboard = ({ agents, selectedAgent }) => {
                 {getActivityIcon(decision.activity)}
               </div>
               <div className="flex-1">
-                <p className="font-medium text-gray-900 capitalize">{decision.activity}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-gray-900 capitalize">{decision.activity}</p>
+                  {decision.source === 'activity_logs' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                      recovered
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-500">{decision.reasoning}</p>
               </div>
               <div className="text-right">

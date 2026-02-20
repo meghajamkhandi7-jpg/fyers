@@ -273,6 +273,75 @@ def normalize_quote_rows(quote_response: Dict[str, Any]) -> List[Dict[str, Any]]
     return rows
 
 
+def _build_watchlist_baskets(watchlist: str | List[str] | None = None) -> Dict[str, List[str]]:
+    sensex_raw = os.getenv("FYERS_WATCHLIST_SENSEX")
+    sensex_symbols = parse_watchlist(watchlist if watchlist is not None else sensex_raw)
+
+    baskets: Dict[str, List[str]] = {}
+    if sensex_symbols:
+        baskets["SENSEX"] = sensex_symbols
+
+    nifty50_raw = os.getenv("FYERS_WATCHLIST_NIFTY50", "")
+    if nifty50_raw.strip():
+        nifty50_symbols = parse_watchlist(nifty50_raw)
+        if nifty50_symbols:
+            baskets["NIFTY50"] = nifty50_symbols
+
+    banknifty_raw = os.getenv("FYERS_WATCHLIST_BANKNIFTY", "")
+    if banknifty_raw.strip():
+        banknifty_symbols = parse_watchlist(banknifty_raw)
+        if banknifty_symbols:
+            baskets["BANKNIFTY"] = banknifty_symbols
+
+    return baskets
+
+
+def _build_basket_summaries(
+    baskets: Dict[str, List[str]],
+    evaluated: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    evaluated_by_symbol = {
+        str(item.get("symbol", "")).upper(): item
+        for item in evaluated
+        if str(item.get("symbol", "")).strip()
+    }
+
+    summaries: List[Dict[str, Any]] = []
+    for basket_name, symbols in baskets.items():
+        buy_candidates = 0
+        watch = 0
+        avoid = 0
+        missing_quotes = 0
+
+        for symbol in symbols:
+            item = evaluated_by_symbol.get(symbol.upper())
+            if not item:
+                missing_quotes += 1
+                watch += 1
+                continue
+
+            signal = item.get("signal")
+            if signal == "BUY_CANDIDATE":
+                buy_candidates += 1
+            elif signal == "AVOID":
+                avoid += 1
+            else:
+                watch += 1
+
+        summaries.append(
+            {
+                "basket": basket_name,
+                "total": len(symbols),
+                "buy_candidates": buy_candidates,
+                "watch": watch,
+                "avoid": avoid,
+                "missing_quotes": missing_quotes,
+            }
+        )
+
+    return summaries
+
+
 def _build_order_preview(symbol: str, last_price: float, config: ScreenerConfig) -> Dict[str, Any]:
     risk_amount = max(config.default_capital * (config.risk_pct / 100.0), 1.0)
     stop_distance = max(last_price * (config.stop_loss_pct / 100.0), 0.01)
@@ -486,7 +555,9 @@ def build_index_recommendations(client: Any, config: ScreenerConfig) -> Dict[str
 
 
 def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[str, Any]:
-    symbols = parse_watchlist(watchlist)
+    baskets = _build_watchlist_baskets(watchlist)
+    symbols = list(dict.fromkeys([symbol for basket_symbols in baskets.values() for symbol in basket_symbols]))
+
     if not symbols:
         return {
             "success": False,
@@ -520,6 +591,7 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
         )
 
     evaluated = evaluate_symbols(rows, config)
+    basket_summaries = _build_basket_summaries(baskets=baskets, evaluated=evaluated)
     index_recommendations = build_index_recommendations(client=client, config=config)
 
     buy_candidates = [item for item in evaluated if item.get("signal") == "BUY_CANDIDATE"]
@@ -529,6 +601,8 @@ def run_screener(client: Any, watchlist: str | List[str] | None = None) -> Dict[
     return {
         "success": True,
         "watchlist": symbols,
+        "watchlist_baskets": baskets,
+        "basket_summaries": basket_summaries,
         "summary": {
             "total": len(evaluated),
             "buy_candidates": len(buy_candidates),

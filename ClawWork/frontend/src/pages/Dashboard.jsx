@@ -436,6 +436,45 @@ const Dashboard = ({ agents, selectedAgent }) => {
               </div>
             </div>
 
+            {(fyersScreener.data?.basket_summaries || []).length > 0 && (
+              <div className="mb-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-gray-500">
+                      <th className="text-left py-2 pr-3 font-medium">Basket</th>
+                      <th className="text-right py-2 pr-3 font-medium">Total</th>
+                      <th className="text-right py-2 pr-3 font-medium">Buy</th>
+                      <th className="text-right py-2 pr-3 font-medium">Watch</th>
+                      <th className="text-right py-2 pr-3 font-medium">Avoid</th>
+                      <th className="text-right py-2 font-medium">Missing Quotes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(fyersScreener.data?.basket_summaries || []).map((row, idx) => (
+                      <tr key={`${row.basket}-${idx}`} className="border-b border-gray-50">
+                        <td className="py-2 pr-3 text-gray-900 font-medium">{row.basket}</td>
+                        <td className="py-2 pr-3 text-right">
+                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-gray-50 border border-gray-100 px-2.5 py-1 text-gray-800 font-medium">{row.total ?? 0}</span>
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-green-50 border border-green-100 px-2.5 py-1 text-green-700 font-medium">{row.buy_candidates ?? 0}</span>
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1 text-blue-700 font-medium">{row.watch ?? 0}</span>
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-red-50 border border-red-100 px-2.5 py-1 text-red-700 font-medium">{row.avoid ?? 0}</span>
+                        </td>
+                        <td className="py-2 text-right">
+                          <span className="inline-flex min-w-[3rem] justify-end rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1 text-amber-700 font-medium">{row.missing_quotes ?? 0}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {((fyersScreener.data?.warnings || []).length > 0 || (fyersScreener.data?.missing_quote_symbols || []).length > 0) && (
               <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-4">
                 {(fyersScreener.data?.warnings || []).map((warning, idx) => (

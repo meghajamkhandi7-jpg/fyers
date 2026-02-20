@@ -47,6 +47,14 @@ Set your watchlist (Indian symbols):
 FYERS_WATCHLIST=NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:SBIN-EQ
 ```
 
+For additional dashboard rows, you can define separate basket watchlists:
+
+```dotenv
+FYERS_WATCHLIST_SENSEX=NSE:RELIANCE-EQ,NSE:TCS-EQ,...
+FYERS_WATCHLIST_NIFTY50=NSE:HDFCBANK-EQ,NSE:INFY-EQ,...
+FYERS_WATCHLIST_BANKNIFTY=NSE:ICICIBANK-EQ,NSE:SBIN-EQ,...
+```
+
 You can also provide company-name style entries (for example `NSE:Reliance Industries-EQ`);
 the screener now auto-normalizes common names to FYERS tradable symbols.
 

@@ -401,6 +401,19 @@ class LiveAgent:
             except Exception as e:
                 error_type = type(e).__name__
                 is_timeout = isinstance(e, (asyncio.TimeoutError, TimeoutError))
+                error_text = str(e).lower()
+
+                is_quota_error = (
+                    "insufficient_quota" in error_text
+                    or "exceeded your current quota" in error_text
+                    or ("error code: 429" in error_text and "rate limit" not in error_text)
+                )
+
+                if is_quota_error:
+                    raise RuntimeError(
+                        "OpenAI quota exhausted (429). Update billing/quota, use another provider/key, "
+                        "or switch to a lower-cost model and retry."
+                    ) from e
                 
                 self.logger.warning(
                     f"Agent invocation attempt {attempt}/{self.max_retries} failed",
@@ -649,6 +662,29 @@ class LiveAgent:
                 try:
                     response = await self._ainvoke_with_retry(messages, timeout=self.api_timeout)
                 except Exception as api_error:
+                    api_error_text = str(api_error).lower()
+                    is_quota_error = (
+                        "quota exhausted" in api_error_text
+                        or "insufficient_quota" in api_error_text
+                        or "exceeded your current quota" in api_error_text
+                    )
+
+                    if is_quota_error:
+                        self.logger.terminal_print("\n❌ API quota exhausted (429)")
+                        self.logger.terminal_print("   Please update billing/quota or switch provider/model, then rerun.")
+                        self.logger.error(
+                            "Stopping simulation due to API quota exhaustion",
+                            context={
+                                "date": date,
+                                "task_id": self.current_task.get('task_id') if self.current_task else None,
+                                "iteration": iteration + 1,
+                                "error_type": type(api_error).__name__
+                            },
+                            exception=api_error,
+                            print_console=False
+                        )
+                        raise RuntimeError("API quota exhausted (429)") from api_error
+
                     # API call failed after all retries - skip this task and continue
                     self.logger.terminal_print(f"\n❌ API call failed after {self.max_retries} retries")
                     self.logger.terminal_print(f"   Error: {str(api_error)[:200]}")
@@ -771,48 +807,65 @@ class LiveAgent:
         # WRAP-UP WORKFLOW: If activity not completed, try to collect and submit artifacts
         if not activity_completed and self.current_task:
             self.logger.terminal_print("\n⚠️ Iteration limit reached without task completion")
-            self.logger.terminal_print("🔄 Initiating wrap-up workflow to collect artifacts...")
+
+            e2b_api_key = os.getenv("E2B_API_KEY", "").strip()
+            e2b_key_lower = e2b_api_key.lower()
+            e2b_key_missing_or_placeholder = (
+                not e2b_api_key
+                or e2b_key_lower.startswith("your-")
+                or "your-api-key" in e2b_key_lower
+                or "placeholder" in e2b_key_lower
+                or "changeme" in e2b_key_lower
+                or "example" in e2b_key_lower
+                or "dummy" in e2b_key_lower
+            )
+            wrapup_disabled = os.getenv("LIVEBENCH_DISABLE_WRAPUP", "0").lower() in {"1", "true", "yes"}
+
+            if wrapup_disabled or e2b_key_missing_or_placeholder:
+                self.logger.terminal_print("⏭️ Skipping wrap-up workflow (E2B is not configured)")
+            else:
+                self.logger.terminal_print("🔄 Initiating wrap-up workflow to collect artifacts...")
             
-            try:
-                from livebench.agent.wrapup_workflow import create_wrapup_workflow
+                try:
+                    from livebench.agent.wrapup_workflow import create_wrapup_workflow
                 
-                # Create sandbox directory path for this date
-                sandbox_dir = os.path.join(
-                    self.data_path,
-                    "sandbox",
-                    date
-                )
+                    # Create sandbox directory path for this date
+                    sandbox_dir = os.path.join(
+                        self.data_path,
+                        "sandbox",
+                        date
+                    )
                 
-                # Create and run wrap-up workflow with conversation context
-                wrapup = create_wrapup_workflow(llm=self.model, logger=self.logger)
-                wrapup_result = await wrapup.run(
-                    date=date,
-                    task=self.current_task,
-                    sandbox_dir=sandbox_dir,
-                    conversation_history=messages  # Pass conversation for context
-                )
+                    # Create and run wrap-up workflow with conversation context
+                    wrapup = create_wrapup_workflow(llm=self.model, logger=self.logger)
+                    wrapup_result = await wrapup.run(
+                        date=date,
+                        task=self.current_task,
+                        sandbox_dir=sandbox_dir,
+                        conversation_history=messages  # Pass conversation for context
+                    )
                 
-                # Process results
-                submission = wrapup_result.get("submission_result")
-                if submission and isinstance(submission, dict):
-                    if submission.get("success"):
-                        payment = submission.get("payment", 0)
-                        if payment > 0:
-                            self.daily_work_income += payment
-                            activity_completed = True
-                            self.logger.terminal_print(f"\n✅ Wrap-up workflow succeeded! Earned: ${payment:.2f}")
+                    # Process results
+                    submission = wrapup_result.get("submission_result")
+                    if submission and isinstance(submission, dict):
+                        if submission.get("success"):
+                            payment = submission.get("payment", 0)
+                            if payment > 0:
+                                self.daily_work_income += payment
+                                activity_completed = True
+                                self.logger.terminal_print(f"\n✅ Wrap-up workflow succeeded! Earned: ${payment:.2f}")
+                        else:
+                            self.logger.terminal_print(f"\n⚠️ Wrap-up workflow completed but submission failed")
                     else:
-                        self.logger.terminal_print(f"\n⚠️ Wrap-up workflow completed but submission failed")
-                else:
-                    self.logger.terminal_print(f"\n⚠️ Wrap-up workflow did not submit any work")
+                        self.logger.terminal_print(f"\n⚠️ Wrap-up workflow did not submit any work")
                     
-            except Exception as e:
-                self.logger.error(
-                    f"Wrap-up workflow failed: {str(e)}",
-                    context={"date": date, "task_id": self.current_task.get('task_id')},
-                    exception=e,
-                    print_console=True
-                )
+                except Exception as e:
+                    self.logger.error(
+                        f"Wrap-up workflow failed: {str(e)}",
+                        context={"date": date, "task_id": self.current_task.get('task_id')},
+                        exception=e,
+                        print_console=True
+                    )
 
         # Clean up task-level sandbox to prevent accumulation
         # This ensures sandbox is killed after each task/day, not just at program exit

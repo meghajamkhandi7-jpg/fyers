@@ -54,6 +54,16 @@ print(f"   Buy candidates: {summary.get('buy_candidates', 0)}")
 print(f"   Watch: {summary.get('watch', 0)}")
 print(f"   Avoid: {summary.get('avoid', 0)}")
 
+warnings = result.get("warnings") or []
+missing_symbols = result.get("missing_quote_symbols") or []
+if warnings:
+    print("\nWarnings:")
+    for warning in warnings:
+        print(f" - {warning}")
+elif missing_symbols:
+    print("\nWarnings:")
+    print(f" - No quote rows returned for: {', '.join(missing_symbols)}")
+
 print("\nTop signals:")
 for row in result.get("results", [])[:10]:
     symbol = row.get("symbol")
@@ -64,6 +74,19 @@ for row in result.get("results", [])[:10]:
     chg_text = "NA" if chg is None else f"{chg:.2f}%"
     ltp_text = "NA" if ltp is None else f"{ltp:.2f}"
     print(f" - {symbol}: {signal} | LTP={ltp_text} | Change={chg_text} | {reason}")
+
+print("\nIndex strike recommendations:")
+for row in result.get("index_recommendations", []):
+    side = row.get("option_side")
+    strike = row.get("preferred_strike")
+    confidence = row.get("confidence")
+    chg = row.get("change_pct")
+    chg_text = "NA" if chg is None else f"{chg:.2f}%"
+    strike_text = "WAIT" if strike is None else str(strike)
+    print(
+        f" - {row.get('index')}: {row.get('signal')} | Side={side} | "
+        f"Change={chg_text} | Preferred Strike={strike_text} | Confidence={confidence}%"
+    )
 
 out_dir = Path("livebench/data/fyers")
 out_dir.mkdir(parents=True, exist_ok=True)

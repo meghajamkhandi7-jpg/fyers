@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Home, Briefcase, Brain, Activity, Trophy, FolderOpen, Settings, X, Check, Star, Github } from 'lucide-react'
 import { useDisplayName } from '../DisplayNamesContext'
 
+const formatINR = (value, digits = 2) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+
 const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, selectedAgent, onSelectAgent, connectionStatus }) => {
   const location = useLocation()
+  const navigate = useNavigate()
   const dn = useDisplayName()
   const [showSettings, setShowSettings] = useState(false)
   const [pendingHidden, setPendingHidden] = useState(new Set())
@@ -81,6 +85,19 @@ const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, select
   const handleApply = () => {
     onUpdateHiddenAgents(new Set(pendingHidden))
     setIsDirty(false)
+  }
+
+  const handleAgentSelect = (signature) => {
+    onSelectAgent(signature)
+    if (location.pathname.startsWith('/agent/')) {
+      navigate(`/agent/${encodeURIComponent(signature)}`)
+      return
+    }
+
+    const agentAwareRoutes = ['/dashboard', '/work', '/learning']
+    if (!agentAwareRoutes.includes(location.pathname)) {
+      navigate('/dashboard')
+    }
   }
 
   return (
@@ -198,7 +215,7 @@ const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, select
             {agents.map((agent) => (
               <button
                 key={agent.signature}
-                onClick={() => onSelectAgent(agent.signature)}
+                onClick={() => handleAgentSelect(agent.signature)}
                 className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-all text-left ${
                   selectedAgent === agent.signature
                     ? 'bg-gray-100 border border-gray-300'
@@ -211,7 +228,7 @@ const Sidebar = ({ agents, allAgents, hiddenAgents, onUpdateHiddenAgents, select
                     {dn(agent.signature)}
                   </p>
                   <p className="text-xs text-gray-500">
-                    ${agent.balance?.toFixed(2) || '0.00'}
+                    {formatINR(agent.balance || 0)}
                   </p>
                 </div>
               </button>

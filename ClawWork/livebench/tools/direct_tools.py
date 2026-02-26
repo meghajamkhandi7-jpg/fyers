@@ -14,6 +14,14 @@ from datetime import datetime
 from livebench.utils.logger import get_logger
 from livebench.trading.fyers_client import FyersClient
 from livebench.trading.screener import run_screener
+from livebench.trading.institutional_desk import run_institutional_desk
+from livebench.trading.experience_store import ExperienceStore
+from livebench.trading.paper_evaluator import compare_backtests
+from livebench.trading.rollout_gate import evaluate_rollout_gate
+from livebench.audit.audit_logger import AuditLogger
+from livebench.configs.feature_flags import FeatureFlags
+from livebench.trading.kill_switch import KillSwitch
+from livebench.trading.guardrails import guard_trade_request
 
 
 # Global state (will be set by agent)
@@ -64,6 +72,21 @@ def _record_fyers_screener_run(entry: Dict[str, Any]) -> None:
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _resolve_trading_dir() -> str | None:
+    data_path = _global_state.get("data_path")
+    signature = _global_state.get("signature")
+
+    if not data_path:
+        return None
+
+    trading_dir = os.path.join(data_path, "trading")
+    if signature and not os.path.basename(os.path.normpath(data_path)) == signature:
+        trading_dir = os.path.join(data_path, signature, "trading")
+
+    os.makedirs(trading_dir, exist_ok=True)
+    return trading_dir
 
 
 def set_global_state(
@@ -476,6 +499,43 @@ def fyers_place_order(order_payload: Union[str, Dict[str, Any]]) -> Dict[str, An
             "error": "order_payload must be a JSON object"
         }
 
+    symbol = str(order_payload.get("symbol", "UNKNOWN"))
+    flags = FeatureFlags.from_env()
+    kill_switch = KillSwitch()
+    audit = AuditLogger()
+
+    guardrail_result = guard_trade_request(
+        symbol=symbol,
+        flags=flags,
+        kill_switch=kill_switch,
+        audit=audit,
+        context={"tool": "fyers_place_order"}
+    )
+
+    if not guardrail_result.allowed:
+        audit_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "signature": _global_state.get("signature"),
+            "date": _global_state.get("current_date"),
+            "result": "blocked_guardrail",
+            "order_payload": order_payload,
+            "guardrail_decision": {
+                "action": guardrail_result.decision.action if guardrail_result.decision else "NO_TRADE",
+                "reason": guardrail_result.decision.reason if guardrail_result.decision else "Unknown guardrail block"
+            }
+        }
+        _record_fyers_order_attempt(audit_entry)
+        return {
+            "success": True,
+            "blocked": True,
+            "order_sent": False,
+            "guardrail": {
+                "action": guardrail_result.decision.action if guardrail_result.decision else "NO_TRADE",
+                "reason": guardrail_result.decision.reason if guardrail_result.decision else "Unknown guardrail block"
+            },
+            "message": "Order blocked by trading guardrails"
+        }
+
     dry_run = _env_flag("FYERS_DRY_RUN", True)
     allow_live_orders = _env_flag("FYERS_ALLOW_LIVE_ORDERS", False)
 
@@ -531,6 +591,37 @@ def fyers_run_screener(watchlist: Union[str, list, None] = None) -> Dict[str, An
     client = FyersClient()
     result = run_screener(client=client, watchlist=watchlist)
 
+    shadow_result: Dict[str, Any]
+    if result.get("success"):
+        try:
+            from institutional_agents.integration.shadow_adapter import run_shadow_adapter
+
+            shadow_result = run_shadow_adapter(
+                baseline_result=result,
+                runtime_context={
+                    "signature": _global_state.get("signature"),
+                    "current_date": _global_state.get("current_date"),
+                    "data_path": _global_state.get("data_path"),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            shadow_result = {
+                "status": "failed_safe",
+                "enabled": False,
+                "shadow_mode": True,
+                "record_count": 0,
+                "error": str(exc),
+            }
+    else:
+        shadow_result = {
+            "status": "skipped_baseline_failed",
+            "enabled": False,
+            "shadow_mode": True,
+            "record_count": 0,
+        }
+
+    result["institutional_shadow"] = shadow_result
+
     audit_entry = {
         "timestamp": datetime.now().isoformat(),
         "signature": _global_state.get("signature"),
@@ -538,11 +629,211 @@ def fyers_run_screener(watchlist: Union[str, list, None] = None) -> Dict[str, An
         "watchlist_input": watchlist,
         "success": result.get("success"),
         "summary": result.get("summary"),
+        "institutional_shadow": {
+            "status": shadow_result.get("status"),
+            "record_count": shadow_result.get("record_count", 0),
+            "agree_count": shadow_result.get("agree_count", 0),
+            "disagree_count": shadow_result.get("disagree_count", 0),
+        },
         "message": result.get("message"),
         "results": result.get("results"),
     }
     _record_fyers_screener_run(audit_entry)
     return result
+
+
+@tool
+def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Generate a strict-schema institutional desk decision from analyst, trader, and risk inputs.
+
+    Args:
+        payload: JSON object (or JSON string) with keys:
+            - analysts: list of 3 role outputs (technical, fundamental, sentiment)
+            - trader_proposal: trader plan
+            - risk_review: risk manager approval/veto
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    try:
+        signature = _global_state.get("signature")
+        symbol = ""
+        trader_proposal = payload.get("trader_proposal", {})
+        if isinstance(trader_proposal, dict):
+            symbol = str(trader_proposal.get("symbol", "")).strip()
+
+        recent_similar = []
+        strategy_prior = None
+        experience_id = None
+        store_path = None
+
+        trading_dir = _resolve_trading_dir()
+        store = None
+        if trading_dir:
+            store_path = os.path.join(trading_dir, "experience_store.db")
+            store = ExperienceStore(db_path=store_path)
+            recent_similar = store.list_recent(symbol=symbol if symbol else None, limit=3)
+            if symbol:
+                strategy_prior = store.get_strategy_prior(symbol=symbol)
+
+        decision = run_institutional_desk(payload)
+
+        if store is not None:
+            experience_id = store.record_decision(
+                signature=signature,
+                payload=payload,
+                decision=decision,
+            )
+
+        return {
+            "success": True,
+            "decision": decision,
+            "learning_memory": {
+                "experience_id": experience_id,
+                "recent_similar": recent_similar,
+                "strategy_prior": strategy_prior,
+                "store_path": store_path,
+            },
+        }
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@tool
+def institutional_record_outcome(
+    experience_id: int,
+    outcome_label: str,
+    pnl_pct: float,
+    reflection_note: str = "",
+    decision_quality: Union[float, None] = None,
+    risk_efficiency: Union[float, None] = None,
+    timing_quality: Union[float, None] = None,
+) -> Dict[str, Any]:
+    """
+    Persist post-trade outcome and reflection, then update long-term strategy priors.
+
+    Args:
+        experience_id: ID returned by institutional_desk_decide learning_memory.experience_id
+        outcome_label: WIN, LOSS, or BREAKEVEN
+        pnl_pct: Realized P&L in percentage terms
+        reflection_note: Optional qualitative reflection
+        decision_quality: Optional score 0-1 for decision quality
+        risk_efficiency: Optional score 0-1 for risk efficiency
+        timing_quality: Optional score 0-1 for timing quality
+    """
+    trading_dir = _resolve_trading_dir()
+    if not trading_dir:
+        return {"success": False, "error": "data_path not available; cannot persist outcomes"}
+
+    store_path = os.path.join(trading_dir, "experience_store.db")
+    store = ExperienceStore(db_path=store_path)
+
+    try:
+        updated_prior = store.update_outcome_with_reflection(
+            experience_id=int(experience_id),
+            outcome_label=outcome_label,
+            pnl_pct=float(pnl_pct),
+            reflection_note=reflection_note,
+            decision_quality=decision_quality,
+            risk_efficiency=risk_efficiency,
+            timing_quality=timing_quality,
+        )
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+    recent_reflections = store.get_recent_reflections(symbol=updated_prior["symbol"], limit=3)
+
+    return {
+        "success": True,
+        "experience_id": int(experience_id),
+        "updated_prior": updated_prior,
+        "recent_reflections": recent_reflections,
+        "store_path": store_path,
+    }
+
+
+@tool
+def institutional_run_paper_evaluation(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Run deterministic paper/backtest evaluation for institutional decisions.
+
+    Args:
+        payload: JSON object (or string) with keys:
+            - candidate_rows: list of candidate strategy rows
+            - baseline_rows: optional baseline strategy rows
+            - transaction_cost_bps: optional execution cost in bps (default 5)
+            - slippage_bps: optional slippage in bps (default 5)
+            - annualization_factor: optional annualization periods (default 252)
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    candidate_rows = payload.get("candidate_rows")
+    if not isinstance(candidate_rows, list):
+        return {"success": False, "error": "payload.candidate_rows must be a list"}
+
+    baseline_rows = payload.get("baseline_rows")
+    if baseline_rows is not None and not isinstance(baseline_rows, list):
+        return {"success": False, "error": "payload.baseline_rows must be a list when provided"}
+
+    transaction_cost_bps = float(payload.get("transaction_cost_bps", 5.0))
+    slippage_bps = float(payload.get("slippage_bps", 5.0))
+    annualization_factor = int(payload.get("annualization_factor", 252))
+
+    try:
+        report = compare_backtests(
+            candidate_rows=candidate_rows,
+            baseline_rows=baseline_rows,
+            transaction_cost_bps=transaction_cost_bps,
+            slippage_bps=slippage_bps,
+            annualization_factor=annualization_factor,
+        )
+        return {"success": True, "report": report}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@tool
+def institutional_evaluate_rollout_gate(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Evaluate go-live and rollback gates for controlled rollout stages.
+
+    Args:
+        payload: JSON object (or string) with boolean fields:
+            - performance_threshold_met
+            - risk_threshold_met
+            - monitoring_active
+            - rollback_tested
+            - shadow_mode_min_days_met
+            - max_drawdown_breach
+            - daily_loss_cap_breach
+            - critical_alert_active
+            - manual_override_rollback
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    report = evaluate_rollout_gate(payload)
+    return {"success": True, "report": report}
 
 
 # Import productivity tools from separate modules (if available)
@@ -714,7 +1005,7 @@ def get_all_tools():
 
     Returns:
     - 4 core tools (decide_activity, submit_work, learn, get_status)
-    - 7 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener)
+    - 11 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome, institutional_run_paper_evaluation, institutional_evaluate_rollout_gate)
     - 6 productivity tools (search_web, read_webpage, create_file, execute_code_sandbox, read_file, create_video) if available
     """
     core_tools = [
@@ -730,6 +1021,10 @@ def get_all_tools():
         fyers_quotes,
         fyers_place_order,
         fyers_run_screener,
+        institutional_desk_decide,
+        institutional_record_outcome,
+        institutional_run_paper_evaluation,
+        institutional_evaluate_rollout_gate,
     ]
 
     if PRODUCTIVITY_TOOLS_AVAILABLE:

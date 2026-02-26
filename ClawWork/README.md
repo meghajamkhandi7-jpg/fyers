@@ -278,6 +278,19 @@ cd ClawWork
 The screener uses simple momentum rules and outputs `BUY_CANDIDATE`, `WATCH`, or `AVOID`, plus dry-run order previews.
 Full output is saved under `livebench/data/fyers/`.
 
+It also tracks `NIFTY50`, `BANKNIFTY`, and `SENSEX` to generate index bias and option strike suggestions
+(`CE`/`PE`, preferred strike, and confidence) for entry planning.
+
+Optional tuning via `.env`:
+
+```bash
+FYERS_INDEX_NEUTRAL_PCT=0.25
+FYERS_INDEX_STRONG_TREND_PCT=0.8
+FYERS_STRIKE_STEP_NIFTY50=50
+FYERS_STRIKE_STEP_BANKNIFTY=100
+FYERS_STRIKE_STEP_SENSEX=100
+```
+
 Dry-run only (safe mode, default):
 
 ```bash

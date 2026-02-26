@@ -8,6 +8,7 @@ criteria from eval/meta_prompts/ for each task category (occupation).
 import os
 import json
 import base64
+import difflib
 from typing import Dict, Optional, Tuple, List, Union
 from pathlib import Path
 from datetime import datetime
@@ -15,6 +16,25 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _normalize_openai_model_name(model: str, base_url: str | None) -> str:
+    """Normalize model names for OpenAI-compatible endpoints.
+
+    OpenAI's chat-completions API expects model IDs like ``gpt-4o-mini``,
+    not provider-prefixed aliases such as ``openai/gpt-4o-mini``.
+    """
+    if not model or "/" not in model:
+        return model
+
+    endpoint = (base_url or "https://api.openai.com/v1").lower()
+    if "api.openai.com" not in endpoint:
+        return model
+
+    prefix, model_id = model.split("/", 1)
+    if prefix.lower() == "openai" and model_id:
+        return model_id
+    return model
 
 
 class LLMEvaluator:
@@ -53,6 +73,8 @@ class LLMEvaluator:
         # Allow overriding evaluation model
         if os.getenv("EVALUATION_MODEL"):
             self.model = os.getenv("EVALUATION_MODEL")
+
+        self.model = _normalize_openai_model_name(self.model, base_url)
         
         # Log configuration
         if os.getenv("EVALUATION_API_KEY"):
@@ -206,29 +228,67 @@ class LLMEvaluator:
         """
         # Normalize occupation name to match file naming
         normalized = occupation.replace(' ', '_').replace(',', '')
-        
+
         # Check cache first
         if normalized in self._meta_prompt_cache:
             return self._meta_prompt_cache[normalized]
-        
-        # Try to find matching meta-prompt file
-        meta_prompt_path = self.meta_prompts_dir / f"{normalized}.json"
-        
-        if not meta_prompt_path.exists():
-            print(f"⚠️ No meta-prompt found for occupation: {occupation}")
-            print(f"   Looking for: {meta_prompt_path}")
-            return None
-        
-        # Load and cache
+
+        # 1) Exact file match
+        exact_path = self.meta_prompts_dir / f"{normalized}.json"
+        if exact_path.exists():
+            return self._read_and_cache_meta_prompt(normalized, exact_path)
+
+        print(f"⚠️ No meta-prompt found for occupation: {occupation}")
+        print(f"   Looking for: {exact_path}")
+
+        # 2) Manual occupation fallback aliases for known variants
+        fallback_aliases = {
+            "DevOps_Engineer": "Software_Developers",
+            "DevOps_Engineers": "Software_Developers",
+            "Curriculum_Designer": "Project_Management_Specialists",
+            "Curriculum_Designers": "Project_Management_Specialists",
+            "Risk_Analyst": "Financial_and_Investment_Analysts",
+            "Risk_Analysts": "Financial_and_Investment_Analysts"
+        }
+
+        alias_target = fallback_aliases.get(normalized)
+        if alias_target:
+            alias_path = self.meta_prompts_dir / f"{alias_target}.json"
+            if alias_path.exists():
+                print(f"   ↪ Falling back to closest mapped rubric: {alias_target}")
+                meta_prompt = self._read_and_cache_meta_prompt(normalized, alias_path)
+                if meta_prompt is not None:
+                    meta_prompt["fallback_from_occupation"] = occupation
+                return meta_prompt
+
+        # 3) Best-effort nearest filename fallback using string similarity
+        available_files = [
+            p for p in self.meta_prompts_dir.glob("*.json")
+            if p.name != "generation_summary.json"
+        ]
+        available_names = [p.stem for p in available_files]
+        closest = difflib.get_close_matches(normalized, available_names, n=1, cutoff=0.45)
+        if closest:
+            chosen = closest[0]
+            chosen_path = self.meta_prompts_dir / f"{chosen}.json"
+            print(f"   ↪ Falling back to nearest available rubric: {chosen}")
+            meta_prompt = self._read_and_cache_meta_prompt(normalized, chosen_path)
+            if meta_prompt is not None:
+                meta_prompt["fallback_from_occupation"] = occupation
+            return meta_prompt
+
+        return None
+
+    def _read_and_cache_meta_prompt(self, cache_key: str, meta_prompt_path: Path) -> Optional[Dict]:
+        """Read a meta-prompt JSON file and cache it under cache_key."""
         try:
             with open(meta_prompt_path, 'r', encoding='utf-8') as f:
                 meta_prompt = json.load(f)
-            
-            self._meta_prompt_cache[normalized] = meta_prompt
+
+            self._meta_prompt_cache[cache_key] = meta_prompt
             return meta_prompt
-            
         except Exception as e:
-            print(f"⚠️ Error loading meta-prompt for {occupation}: {e}")
+            print(f"⚠️ Error loading meta-prompt from {meta_prompt_path}: {e}")
             return None
 
     def _read_artifacts(self, artifact_paths: list[str], max_size_kb: int = 2000) -> Dict[str, str]:

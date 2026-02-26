@@ -3,32 +3,53 @@ import { Brain, BookOpen, Sparkles, Clock, AlertCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import { fetchAgentLearning } from '../api'
+import { useDisplayName } from '../DisplayNamesContext'
 
 const LearningView = ({ agents, selectedAgent }) => {
+  const dn = useDisplayName()
   const [learningData, setLearningData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedEntry, setSelectedEntry] = useState(null)
 
   useEffect(() => {
-    if (selectedAgent) {
-      fetchLearningData()
-      // Refresh every 5 seconds to catch new learning
-      const interval = setInterval(fetchLearningData, 5000)
-      return () => clearInterval(interval)
+    let cancelled = false
+
+    if (!selectedAgent) {
+      setLearningData(null)
+      setSelectedEntry(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    const fetchLearningData = async (signature) => {
+      try {
+        setLoading(true)
+        const data = await fetchAgentLearning(signature)
+        if (!cancelled) {
+          setLearningData(data)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error fetching learning data:', error)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    setLearningData(null)
+    setSelectedEntry(null)
+    fetchLearningData(selectedAgent)
+
+    // Refresh every 5 seconds to catch new learning
+    const interval = setInterval(() => fetchLearningData(selectedAgent), 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
     }
   }, [selectedAgent])
-
-  const fetchLearningData = async () => {
-    if (!selectedAgent) return
-    try {
-      setLoading(true)
-      setLearningData(await fetchAgentLearning(selectedAgent))
-    } catch (error) {
-      console.error('Error fetching learning data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (!selectedAgent) {
     return (
@@ -63,6 +84,7 @@ const LearningView = ({ agents, selectedAgent }) => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Learning & Knowledge</h1>
           <p className="text-gray-500 mt-1">Agent's accumulated knowledge and insights</p>
+          <p className="text-sm text-gray-400 mt-1">Selected agent: {dn(selectedAgent)}</p>
         </div>
         <div className="flex items-center space-x-4">
           <div className="bg-white rounded-xl px-6 py-3 shadow-sm border border-gray-200">
@@ -176,7 +198,7 @@ const LearningView = ({ agents, selectedAgent }) => {
           {entries.length === 0 && (
             <div className="text-center py-12">
               <Brain className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-600">No learning yet</h3>
+              <h3 className="text-lg font-medium text-gray-600">No learning yet for {dn(selectedAgent)}</h3>
               <p className="text-gray-500 mt-2">
                 Agent will accumulate knowledge here as they learn
               </p>

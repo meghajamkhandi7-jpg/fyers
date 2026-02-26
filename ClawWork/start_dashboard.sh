@@ -5,6 +5,10 @@
 
 set -e
 
+SCREENER_ENABLED="${SCREENER_ENABLED:-1}"
+SCREENER_INTERVAL_SECONDS="${SCREENER_INTERVAL_SECONDS:-60}"
+SCREENER_PID=""
+
 # Activate conda environment
 eval "$(conda shell.bash hook)"
 conda activate base
@@ -79,7 +83,9 @@ kill_port() {
 cleanup() {
     echo ""
     echo -e "${BLUE}🛑 Stopping services...${NC}"
-    kill $API_PID $FRONTEND_PID 2>/dev/null
+    [ -n "${SCREENER_PID:-}" ] && kill "$SCREENER_PID" 2>/dev/null || true
+    [ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true
+    [ -n "${FRONTEND_PID:-}" ] && kill "$FRONTEND_PID" 2>/dev/null || true
     exit 0
 }
 
@@ -132,6 +138,26 @@ if ! kill -0 $FRONTEND_PID 2>/dev/null; then
 fi
 
 echo -e "${GREEN}✓ Frontend started (PID: $FRONTEND_PID)${NC}"
+
+# Start FYERS screener loop (optional)
+if [ "$SCREENER_ENABLED" = "1" ]; then
+    if [ -f "scripts/fyers_screener.sh" ]; then
+        echo -e "${BLUE}📈 Starting FYERS screener loop (${SCREENER_INTERVAL_SECONDS}s)...${NC}"
+        (
+            while true; do
+                bash ./scripts/fyers_screener.sh >> logs/screener.log 2>&1 || true
+                sleep "$SCREENER_INTERVAL_SECONDS"
+            done
+        ) &
+        SCREENER_PID=$!
+        echo -e "${GREEN}✓ Screener loop started (PID: $SCREENER_PID)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  scripts/fyers_screener.sh not found, skipping screener loop${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Screener loop disabled (SCREENER_ENABLED=0)${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}🎉 LiveBench Dashboard is running!${NC}"
@@ -144,6 +170,7 @@ echo ""
 echo -e "${BLUE}📝 Logs:${NC}"
 echo -e "  API:      tail -f logs/api.log"
 echo -e "  Frontend: tail -f logs/frontend.log"
+echo -e "  Screener: tail -f logs/screener.log"
 echo ""
 echo -e "${RED}Press Ctrl+C to stop all services${NC}"
 echo ""

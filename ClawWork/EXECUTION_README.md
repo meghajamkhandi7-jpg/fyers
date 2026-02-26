@@ -47,6 +47,23 @@ Set your watchlist (Indian symbols):
 FYERS_WATCHLIST=NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:SBIN-EQ
 ```
 
+For additional dashboard rows, you can define separate basket watchlists:
+
+```dotenv
+FYERS_WATCHLIST_SENSEX=NSE:RELIANCE-EQ,NSE:TCS-EQ,...
+FYERS_WATCHLIST_NIFTY50=NSE:HDFCBANK-EQ,NSE:INFY-EQ,...
+FYERS_WATCHLIST_BANKNIFTY=NSE:ICICIBANK-EQ,NSE:SBIN-EQ,...
+```
+
+You can also provide company-name style entries (for example `NSE:Reliance Industries-EQ`);
+the screener now auto-normalizes common names to FYERS tradable symbols.
+
+Optional: add custom alias overrides in `.env` (JSON object):
+
+```dotenv
+FYERS_WATCHLIST_ALIASES={"Reliance Industries":"RELIANCE","Larsen & Toubro":"LT"}
+```
+
 ---
 
 ## 3) Generate/refresh FYERS access token
@@ -80,15 +97,26 @@ cd /workspaces/fyers/ClawWork
 bash ./start_dashboard.sh
 ```
 
+This now starts backend + frontend + FYERS screener loop together.
+
+Optional controls:
+
+```bash
+cd /workspaces/fyers/ClawWork
+SCREENER_INTERVAL_SECONDS=60 bash ./start_dashboard.sh
+```
+
+```bash
+cd /workspaces/fyers/ClawWork
+SCREENER_ENABLED=0 bash ./start_dashboard.sh
+```
+
 Access:
 
 - Dashboard: `http://localhost:3000`
 - API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
 
-> If you are in Codespaces, use the forwarded 3000/8000 URLs.
-
----
 
 ## 6) Run agent session (optional for LiveBench data)
 
@@ -111,6 +139,11 @@ Use terminal 3:
 cd /workspaces/fyers/ClawWork
 bash ./scripts/fyers_screener.sh
 ```
+
+Use this only for manual one-off runs (the dashboard startup already runs it in a loop).
+
+If any requested symbols do not return quote rows, the script now prints a `Warnings` section
+and includes `missing_quote_symbols` in the saved JSON.
 
 Expected output includes:
 
@@ -183,3 +216,62 @@ Use full command with `cd`:
 ```bash
 cd /workspaces/fyers/ClawWork && bash ./start_dashboard.sh
 ```
+
+### `Incorrect API key provided` when running `run_test_agent.sh`
+
+Your `.env` still contains placeholder values (for example `your-api-key-here`).
+
+Set real values for at least:
+
+- `OPENAI_API_KEY`
+- `WEB_SEARCH_API_KEY`
+
+If `EVALUATION_API_KEY` is set, it must also be real (or unset it to fall back to `OPENAI_API_KEY`).
+
+### `E2B sandbox 401 Unauthorized` during wrap-up
+
+If `E2B_API_KEY` is missing/placeholder, `run_test_agent.sh` now auto-disables wrap-up for that run.
+To enable wrap-up artifact recovery, set a valid `E2B_API_KEY` in `.env`.
+
+### `template 'gdpval-workspace' not found` in E2B
+
+Your E2B account does not have that template alias.
+
+Runtime now tries these in order:
+
+1. `E2B_TEMPLATE_ID` (if set)
+2. `E2B_TEMPLATE_ALIAS` / `E2B_TEMPLATE` (if set)
+3. legacy alias `gdpval-workspace`
+4. E2B default template
+
+If you built a custom template, add one of these to `.env`:
+
+```dotenv
+E2B_TEMPLATE_ID=tpl_xxxxxxxxxxxxx
+# or
+E2B_TEMPLATE_ALIAS=gdpval-workspace
+```
+
+### `Error code: 429` / `You exceeded your current quota`
+
+This is a provider quota/billing limit (not a code crash).
+
+`run_test_agent.sh` now performs an API preflight check and exits early if quota is exhausted.
+
+Fix options:
+
+- Add billing/credits for the key in use.
+- Switch to another provider/key via `OPENAI_API_BASE` + `OPENAI_API_KEY`.
+- Use a lower-cost model in config (for example `gpt-4o-mini`).
+
+Optional: skip preflight with `LIVEBENCH_SKIP_API_PREFLIGHT=1` if you need to debug other parts.
+
+### `No meta-prompt found for occupation ...`
+
+Some inline/demo occupations may not have an exact file in `eval/meta_prompts/`.
+
+Evaluator now falls back automatically to the closest available rubric (mapped or nearest match), so runs continue instead of failing `submit_work`.
+
+If you want strict category matching, add a dedicated JSON rubric file under:
+
+`eval/meta_prompts/<Occupation_Name>.json`

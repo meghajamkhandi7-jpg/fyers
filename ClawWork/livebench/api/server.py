@@ -11,11 +11,15 @@ import os
 import json
 import asyncio
 import random
+import re
+import sqlite3
+import csv
+import io
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import glob
@@ -61,6 +65,205 @@ def _load_task_values() -> dict:
 
 
 TASK_VALUES = _load_task_values()
+
+
+def _extract_sim_date_from_system(messages: list) -> Optional[str]:
+    for message in messages or []:
+        if message.get("role") != "system":
+            continue
+        content = message.get("content") or ""
+        match = re.search(r"CURRENT ECONOMIC STATUS\s*-\s*(\d{4}-\d{2}-\d{2})", content)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _infer_activity_from_messages(messages: list) -> Optional[str]:
+    combined = "\n".join((msg.get("content") or "") for msg in (messages or []))
+    lowered = combined.lower()
+    if any(token in lowered for token in ["submit_work", "work task", "lending recommendation", "curriculum", "credit risk"]):
+        return "work"
+    if any(token in lowered for token in ["learn(", "learn topic", "research and learn", "save_to_memory"]):
+        return "learn"
+    return None
+
+
+def _extract_reasoning_from_messages(messages: list) -> str:
+    for message in messages or []:
+        if message.get("role") != "assistant":
+            continue
+        content = (message.get("content") or "").strip()
+        if content:
+            compact = " ".join(content.split())
+            return compact[:200]
+    return "Recovered from activity logs"
+
+
+def _load_decisions_from_activity_logs(agent_dir: Path) -> List[dict]:
+    activity_root = agent_dir / "activity_logs"
+    if not activity_root.exists():
+        return []
+
+    recovered = []
+    for log_path in sorted(activity_root.glob("**/log.jsonl")):
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                messages = entry.get("messages", [])
+                activity = _infer_activity_from_messages(messages)
+                if not activity:
+                    continue
+
+                sim_date = _extract_sim_date_from_system(messages)
+                if not sim_date:
+                    timestamp = (entry.get("timestamp") or "")
+                    sim_date = timestamp[:10] if len(timestamp) >= 10 else ""
+
+                recovered.append({
+                    "activity": activity,
+                    "date": sim_date,
+                    "reasoning": _extract_reasoning_from_messages(messages),
+                    "source": "activity_logs",
+                })
+
+    return recovered
+
+
+def _resolve_agent_trading_dir(signature: str) -> Path:
+    return DATA_PATH / signature / "trading"
+
+
+def _resolve_experience_store_path(signature: str) -> Path:
+    return _resolve_agent_trading_dir(signature) / "experience_store.db"
+
+
+def _fetch_institutional_rows(signature: str, limit: int = 50) -> List[dict]:
+    store_path = _resolve_experience_store_path(signature)
+    if not store_path.exists():
+        return []
+
+    with sqlite3.connect(store_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.created_at,
+                e.symbol,
+                e.action,
+                e.confidence,
+                e.approved,
+                e.rationale,
+                e.risk_hard_blocks_json,
+                e.outcome_label,
+                e.pnl_pct,
+                r.reflection_note,
+                r.decision_quality,
+                r.risk_efficiency,
+                r.timing_quality
+            FROM experiences e
+            LEFT JOIN reflections r ON r.experience_id = e.id
+            ORDER BY e.created_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+
+    result = []
+    for row in rows:
+        hard_blocks = []
+        if row[7]:
+            try:
+                parsed = json.loads(row[7])
+                if isinstance(parsed, list):
+                    hard_blocks = [str(item) for item in parsed]
+            except json.JSONDecodeError:
+                hard_blocks = []
+
+        result.append(
+            {
+                "experience_id": int(row[0]),
+                "created_at": row[1],
+                "symbol": row[2],
+                "action": row[3],
+                "confidence": row[4],
+                "approved": bool(row[5]),
+                "rationale": row[6],
+                "risk_hard_blocks": hard_blocks,
+                "outcome_label": row[8],
+                "pnl_pct": row[9],
+                "reflection_note": row[10],
+                "decision_quality": row[11],
+                "risk_efficiency": row[12],
+                "timing_quality": row[13],
+            }
+        )
+
+    return result
+
+
+def _fetch_strategy_priors(signature: str) -> List[dict]:
+    store_path = _resolve_experience_store_path(signature)
+    if not store_path.exists():
+        return []
+
+    with sqlite3.connect(store_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT symbol, buy_call_bias, buy_put_bias, sample_count, updated_at
+            FROM strategy_priors
+            ORDER BY updated_at DESC
+            """
+        ).fetchall()
+
+    return [
+        {
+            "symbol": row[0],
+            "buy_call_bias": float(row[1]),
+            "buy_put_bias": float(row[2]),
+            "sample_count": int(row[3]),
+            "updated_at": row[4],
+        }
+        for row in rows
+    ]
+
+
+def _build_institutional_alerts(rows: List[dict]) -> List[dict]:
+    alerts: List[dict] = []
+    if not rows:
+        return alerts
+
+    recent = rows[:20]
+    veto_count = sum(1 for row in recent if not row.get("approved", False))
+    veto_rate = (veto_count / len(recent)) if recent else 0.0
+    if veto_rate >= 0.6 and len(recent) >= 5:
+        alerts.append(
+            {
+                "type": "veto_spike",
+                "severity": "warning",
+                "message": f"High veto rate in recent decisions: {veto_rate * 100:.1f}%",
+            }
+        )
+
+    pnl_values = [float(row.get("pnl_pct")) for row in recent if row.get("pnl_pct") is not None]
+    if pnl_values:
+        worst = min(pnl_values)
+        if worst <= -2.0:
+            alerts.append(
+                {
+                    "type": "drawdown_event",
+                    "severity": "critical",
+                    "message": f"Severe single-trade drawdown observed: {worst:.2f}%",
+                }
+            )
+
+    return alerts
 
 # Active WebSocket connections
 active_connections: List[WebSocket] = []
@@ -214,6 +417,8 @@ async def get_agent_details(signature: str):
         with open(decision_file, 'r') as f:
             for line in f:
                 decisions.append(json.loads(line))
+    else:
+        decisions = _load_decisions_from_activity_logs(agent_dir)
 
     # Get evaluation statistics
     evaluations_file = agent_dir / "work" / "evaluations.jsonl"
@@ -271,7 +476,7 @@ async def get_agent_tasks(signature: str):
             for line in f:
                 tasks.append(json.loads(line))
 
-    # Load evaluations indexed by task_id
+    # Load evaluations grouped by task_id (preserve order)
     evaluations = {}
     if evaluations_file.exists():
         with open(evaluations_file, 'r') as f:
@@ -279,7 +484,9 @@ async def get_agent_tasks(signature: str):
                 eval_data = json.loads(line)
                 task_id = eval_data.get("task_id")
                 if task_id:
-                    evaluations[task_id] = eval_data
+                    if task_id not in evaluations:
+                        evaluations[task_id] = []
+                    evaluations[task_id].append(eval_data)
 
     # Merge tasks with evaluations
     for task in tasks:
@@ -287,13 +494,15 @@ async def get_agent_tasks(signature: str):
         # Inject task market value if available
         if task_id and task_id in TASK_VALUES:
             task["task_value_usd"] = TASK_VALUES[task_id]
-        if task_id in evaluations:
-            task["evaluation"] = evaluations[task_id]
+        evaluation_list = evaluations.get(task_id, [])
+        evaluation = evaluation_list.pop(0) if evaluation_list else None
+        if evaluation is not None:
+            task["evaluation"] = evaluation
             task["completed"] = True
-            task["payment"] = evaluations[task_id].get("payment", 0)
-            task["feedback"] = evaluations[task_id].get("feedback", "")
-            task["evaluation_score"] = evaluations[task_id].get("evaluation_score", None)  # 0.0-1.0 scale
-            task["evaluation_method"] = evaluations[task_id].get("evaluation_method", "heuristic")
+            task["payment"] = evaluation.get("payment", 0)
+            task["feedback"] = evaluation.get("feedback", "")
+            task["evaluation_score"] = evaluation.get("evaluation_score", None)  # 0.0-1.0 scale
+            task["evaluation_method"] = evaluation.get("evaluation_method", "heuristic")
         else:
             task["completed"] = False
             task["payment"] = 0
@@ -497,6 +706,150 @@ async def get_latest_fyers_screener():
         "updated_at": datetime.fromtimestamp(latest_file.stat().st_mtime).isoformat(),
         "data": payload,
     }
+
+
+@app.get("/api/agents/{signature}/institutional-shadow/latest")
+async def get_latest_institutional_shadow(signature: str):
+    """Get latest institutional shadow summary from agent trading screener audit log."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    screener_log = agent_dir / "trading" / "fyers_screener.jsonl"
+    if not screener_log.exists():
+        return {
+            "available": False,
+            "message": "No agent screener audit log found",
+            "signature": signature,
+        }
+
+    latest_payload = None
+    with open(screener_log, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                latest_payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+    if not isinstance(latest_payload, dict):
+        return {
+            "available": False,
+            "message": "No valid screener audit entries found",
+            "signature": signature,
+        }
+
+    shadow = latest_payload.get("institutional_shadow", {})
+    return {
+        "available": True,
+        "signature": signature,
+        "timestamp": latest_payload.get("timestamp"),
+        "date": latest_payload.get("date"),
+        "success": latest_payload.get("success"),
+        "institutional_shadow": shadow if isinstance(shadow, dict) else {},
+    }
+
+
+@app.get("/api/agents/{signature}/institutional/decision-cards")
+async def get_institutional_decision_cards(signature: str, limit: int = Query(default=20, ge=1, le=200)):
+    """Get latest institutional decision cards with reflection fields."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=limit)
+    return {
+        "signature": signature,
+        "count": len(rows),
+        "cards": rows,
+    }
+
+
+@app.get("/api/agents/{signature}/institutional/monitoring")
+async def get_institutional_monitoring(signature: str):
+    """Get institutional monitoring summary including priors and alert signals."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=200)
+    priors = _fetch_strategy_priors(signature=signature)
+    alerts = _build_institutional_alerts(rows)
+
+    total = len(rows)
+    approved = sum(1 for row in rows if row.get("approved", False))
+    vetoed = total - approved
+    outcomes = [row.get("pnl_pct") for row in rows if row.get("pnl_pct") is not None]
+    avg_pnl = (sum(float(value) for value in outcomes) / len(outcomes)) if outcomes else None
+
+    return {
+        "signature": signature,
+        "monitoring": {
+            "total_decisions": total,
+            "approved_decisions": approved,
+            "vetoed_decisions": vetoed,
+            "veto_rate_pct": round((vetoed / total) * 100, 2) if total else 0.0,
+            "avg_realized_pnl_pct": round(avg_pnl, 4) if avg_pnl is not None else None,
+        },
+        "strategy_priors": priors,
+        "alerts": alerts,
+    }
+
+
+@app.get("/api/agents/{signature}/institutional/audit-export")
+async def export_institutional_audit(
+    signature: str,
+    fmt: str = Query(default="json", pattern="^(json|csv)$"),
+    limit: int = Query(default=500, ge=1, le=5000),
+):
+    """Export institutional audit rows in JSON or CSV format."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=limit)
+
+    if fmt == "json":
+        return {
+            "signature": signature,
+            "count": len(rows),
+            "rows": rows,
+        }
+
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "experience_id",
+            "created_at",
+            "symbol",
+            "action",
+            "confidence",
+            "approved",
+            "rationale",
+            "risk_hard_blocks",
+            "outcome_label",
+            "pnl_pct",
+            "reflection_note",
+            "decision_quality",
+            "risk_efficiency",
+            "timing_quality",
+        ],
+    )
+    writer.writeheader()
+    for row in rows:
+        csv_row = dict(row)
+        csv_row["risk_hard_blocks"] = ";".join(row.get("risk_hard_blocks", []))
+        writer.writerow(csv_row)
+
+    filename = f"{signature}_institutional_audit.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 ARTIFACT_EXTENSIONS = {'.pdf', '.docx', '.xlsx', '.pptx'}

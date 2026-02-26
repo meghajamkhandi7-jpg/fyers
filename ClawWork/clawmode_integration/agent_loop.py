@@ -78,7 +78,11 @@ class ClawWorkAgentLoop(AgentLoop):
     # ------------------------------------------------------------------
 
     async def _process_message(
-        self, msg: InboundMessage, session_key: str | None = None,
+        self,
+        msg: InboundMessage,
+        session_key: str | None = None,
+        on_progress: Any = None,
+        **kwargs: Any,
     ) -> OutboundMessage | None:
         """Wrap super()'s processing with start_task / end_task.
 
@@ -88,7 +92,13 @@ class ClawWorkAgentLoop(AgentLoop):
         # Check for /clawwork command
         content = (msg.content or "").strip()
         if content.lower().startswith("/clawwork"):
-            return await self._handle_clawwork(msg, content, session_key=session_key)
+            return await self._handle_clawwork(
+                msg,
+                content,
+                session_key=session_key,
+                on_progress=on_progress,
+                **kwargs,
+            )
 
         # Regular message — standard economic tracking
         ts = msg.timestamp.strftime("%Y%m%d_%H%M%S")
@@ -99,7 +109,12 @@ class ClawWorkAgentLoop(AgentLoop):
         tracker.start_task(task_id, date=date_str)
 
         try:
-            response = await super()._process_message(msg, session_key=session_key)
+            response = await super()._process_message(
+                msg,
+                session_key=session_key,
+                on_progress=on_progress,
+                **kwargs,
+            )
 
             # Append a cost summary line to the response content
             if response and response.content and tracker.current_task_id:
@@ -123,7 +138,12 @@ class ClawWorkAgentLoop(AgentLoop):
     # ------------------------------------------------------------------
 
     async def _handle_clawwork(
-        self, msg: InboundMessage, content: str, session_key: str | None = None,
+        self,
+        msg: InboundMessage,
+        content: str,
+        session_key: str | None = None,
+        on_progress: Any = None,
+        **kwargs: Any,
     ) -> OutboundMessage | None:
         """Parse /clawwork <instruction>, classify, assign task, run agent."""
         # Extract instruction after "/clawwork"
@@ -204,7 +224,12 @@ class ClawWorkAgentLoop(AgentLoop):
         tracker.start_task(task_id, date=date_str)
 
         try:
-            response = await super()._process_message(rewritten, session_key=session_key)
+            response = await super()._process_message(
+                rewritten,
+                session_key=session_key,
+                on_progress=on_progress,
+                **kwargs,
+            )
 
             if response and response.content and tracker.current_task_id:
                 cost_line = self._format_cost_line()

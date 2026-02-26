@@ -6,6 +6,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { fetchLeaderboard as apiFetchLeaderboard } from '../api'
 import { useDisplayName } from '../DisplayNamesContext'
 
+const formatINR = (value, digits = 2) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+
+const formatINRCompact = (v) => v >= 1000
+  ? `₹${(v / 1000).toFixed(1)}k`
+  : `₹${v.toFixed(0)}`
+
 const NEON_COLORS = [
   '#22d3ee', // cyan
   '#a78bfa', // purple
@@ -86,7 +93,7 @@ const statusColor  = (s) => ({ thriving: '#34d399', stable: '#60a5fa', strugglin
 const Ticker = ({ agents, dn = (s) => s }) => {
   if (!agents.length) return null
   const items = agents.map((a, i) => ({
-    text: `${dn(a.signature)}  $${a.current_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    text: `${dn(a.signature)}  ${formatINR(a.current_balance)}`,
     symbol: statusSymbol(a.survival_status),
     color: NEON_COLORS[i % NEON_COLORS.length],
     statusColor: statusColor(a.survival_status),
@@ -376,7 +383,7 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
         <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>{xLabel}</p>
         {payload.map((entry, i) => (
           <p key={i} style={{ color: entry.color, fontSize: 13, margin: '4px 0' }}>
-            {dn(entry.name)}: ${Number(entry.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {dn(entry.name)}: {formatINR(entry.value)}
           </p>
         ))}
       </div>
@@ -467,7 +474,7 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
               <p className="text-xs text-white/70 uppercase tracking-widest mb-0.5">Top Performer</p>
               <p className={`font-bold ${isFullscreen ? 'text-sm' : 'text-lg'}`}>{dn(topAgent.signature)}</p>
               <p className="text-sm text-white/90 font-mono">
-                ${topAgent.current_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatINR(topAgent.current_balance)}
               </p>
             </div>
           )}
@@ -553,7 +560,7 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
                 />
                 <YAxis
                   tick={{ fontSize: 11, fill: '#475569' }}
-                  tickFormatter={(v) => `$${v.toLocaleString()}`}
+                  tickFormatter={(v) => formatINR(v, 0)}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                 />
@@ -663,10 +670,10 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
                       animate={{
                         opacity: 1, x: 0,
                         backgroundColor: flash === 'up'
-                          ? ['rgba(52,211,153,0.15)', 'transparent']
+                          ? ['rgba(52,211,153,0.15)', 'rgba(0,0,0,0)']
                           : flash === 'down'
-                          ? ['rgba(248,113,113,0.15)', 'transparent']
-                          : 'transparent',
+                          ? ['rgba(248,113,113,0.15)', 'rgba(0,0,0,0)']
+                          : 'rgba(0,0,0,0)',
                       }}
                       transition={{ delay: index * 0.04, duration: 0.3 }}
                       style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
@@ -711,13 +718,13 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
 
                       {/* Starter asset */}
                       <td className="px-4 py-3.5 font-mono text-xs text-slate-500">
-                        ${agent.initial_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatINR(agent.initial_balance)}
                       </td>
 
                       {/* Current balance */}
                       <td className="px-4 py-3.5">
                         <span className="font-mono text-sm font-bold" style={{ color: isTop ? '#fbbf24' : '#e2e8f0' }}>
-                          ${agent.current_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatINR(agent.current_balance)}
                         </span>
                       </td>
 
@@ -731,12 +738,12 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
 
                       {/* Income */}
                       <td className="px-4 py-3.5 font-mono text-xs text-emerald-400">
-                        ${agent.total_work_income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatINR(agent.total_work_income)}
                       </td>
 
                       {/* Cost */}
                       <td className="px-4 py-3.5 font-mono text-xs text-red-400">
-                        ${agent.total_token_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatINR(agent.total_token_cost)}
                       </td>
 
                       {/* Pay rate */}
@@ -746,14 +753,11 @@ const Leaderboard = ({ hiddenAgents = new Set() }) => {
                           if (!m || m.hourlyRate === null) return <span className="text-slate-600 text-xs">—</span>
                           const h = m.hourlyRate
                           const d = h * 8
-                          const fmt = (v) => v >= 1000
-                            ? `$${(v/1000).toFixed(1)}k`
-                            : `$${v.toFixed(0)}`
                           return (
-                            <span className="font-mono text-xs text-amber-400" title={`Hourly: $${h.toFixed(2)}/hr  Daily (8h): $${d.toFixed(2)}/day`}>
-                              {fmt(h)}<span className="text-slate-500">/hr</span>
+                            <span className="font-mono text-xs text-amber-400" title={`Hourly: ${formatINR(h)}/hr  Daily (8h): ${formatINR(d)}/day`}>
+                              {formatINRCompact(h)}<span className="text-slate-500">/hr</span>
                               <span className="text-slate-600 mx-1">·</span>
-                              {fmt(d)}<span className="text-slate-500">/day</span>
+                              {formatINRCompact(d)}<span className="text-slate-500">/day</span>
                             </span>
                           )
                         })()}

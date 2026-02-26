@@ -52,6 +52,9 @@ export const fetchTerminalLog = (sig, date) =>
 export const fetchLatestFyersScreener = () =>
   get(STATIC ? staticUrl('fyers/screener-latest.json') : liveUrl('fyers/screener/latest'))
 
+export const fetchLatestInstitutionalShadow = (sig) =>
+  get(STATIC ? staticUrl(`agents/${encodeURIComponent(sig)}/institutional-shadow-latest.json`) : liveUrl(`agents/${sig}/institutional-shadow/latest`))
+
 /** Returns a URL that can be used directly in fetch() or as an iframe src */
 export const getArtifactFileUrl = (path) =>
   STATIC

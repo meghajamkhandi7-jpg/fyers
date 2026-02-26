@@ -16,6 +16,7 @@ from livebench.trading.fyers_client import FyersClient
 from livebench.trading.screener import run_screener
 from livebench.trading.institutional_desk import run_institutional_desk
 from livebench.trading.experience_store import ExperienceStore
+from livebench.trading.paper_evaluator import compare_backtests
 from livebench.audit.audit_logger import AuditLogger
 from livebench.configs.feature_flags import FeatureFlags
 from livebench.trading.kill_switch import KillSwitch
@@ -757,6 +758,53 @@ def institutional_record_outcome(
     }
 
 
+@tool
+def institutional_run_paper_evaluation(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Run deterministic paper/backtest evaluation for institutional decisions.
+
+    Args:
+        payload: JSON object (or string) with keys:
+            - candidate_rows: list of candidate strategy rows
+            - baseline_rows: optional baseline strategy rows
+            - transaction_cost_bps: optional execution cost in bps (default 5)
+            - slippage_bps: optional slippage in bps (default 5)
+            - annualization_factor: optional annualization periods (default 252)
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    candidate_rows = payload.get("candidate_rows")
+    if not isinstance(candidate_rows, list):
+        return {"success": False, "error": "payload.candidate_rows must be a list"}
+
+    baseline_rows = payload.get("baseline_rows")
+    if baseline_rows is not None and not isinstance(baseline_rows, list):
+        return {"success": False, "error": "payload.baseline_rows must be a list when provided"}
+
+    transaction_cost_bps = float(payload.get("transaction_cost_bps", 5.0))
+    slippage_bps = float(payload.get("slippage_bps", 5.0))
+    annualization_factor = int(payload.get("annualization_factor", 252))
+
+    try:
+        report = compare_backtests(
+            candidate_rows=candidate_rows,
+            baseline_rows=baseline_rows,
+            transaction_cost_bps=transaction_cost_bps,
+            slippage_bps=slippage_bps,
+            annualization_factor=annualization_factor,
+        )
+        return {"success": True, "report": report}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+
 # Import productivity tools from separate modules (if available)
 try:
     from livebench.tools.productivity import (
@@ -926,7 +974,7 @@ def get_all_tools():
 
     Returns:
     - 4 core tools (decide_activity, submit_work, learn, get_status)
-    - 9 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome)
+    - 10 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome, institutional_run_paper_evaluation)
     - 6 productivity tools (search_web, read_webpage, create_file, execute_code_sandbox, read_file, create_video) if available
     """
     core_tools = [
@@ -944,6 +992,7 @@ def get_all_tools():
         fyers_run_screener,
         institutional_desk_decide,
         institutional_record_outcome,
+        institutional_run_paper_evaluation,
     ]
 
     if PRODUCTIVITY_TOOLS_AVAILABLE:

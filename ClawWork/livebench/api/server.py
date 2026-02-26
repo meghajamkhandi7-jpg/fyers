@@ -12,11 +12,14 @@ import json
 import asyncio
 import random
 import re
+import sqlite3
+import csv
+import io
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import glob
@@ -131,6 +134,136 @@ def _load_decisions_from_activity_logs(agent_dir: Path) -> List[dict]:
                 })
 
     return recovered
+
+
+def _resolve_agent_trading_dir(signature: str) -> Path:
+    return DATA_PATH / signature / "trading"
+
+
+def _resolve_experience_store_path(signature: str) -> Path:
+    return _resolve_agent_trading_dir(signature) / "experience_store.db"
+
+
+def _fetch_institutional_rows(signature: str, limit: int = 50) -> List[dict]:
+    store_path = _resolve_experience_store_path(signature)
+    if not store_path.exists():
+        return []
+
+    with sqlite3.connect(store_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.created_at,
+                e.symbol,
+                e.action,
+                e.confidence,
+                e.approved,
+                e.rationale,
+                e.risk_hard_blocks_json,
+                e.outcome_label,
+                e.pnl_pct,
+                r.reflection_note,
+                r.decision_quality,
+                r.risk_efficiency,
+                r.timing_quality
+            FROM experiences e
+            LEFT JOIN reflections r ON r.experience_id = e.id
+            ORDER BY e.created_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+
+    result = []
+    for row in rows:
+        hard_blocks = []
+        if row[7]:
+            try:
+                parsed = json.loads(row[7])
+                if isinstance(parsed, list):
+                    hard_blocks = [str(item) for item in parsed]
+            except json.JSONDecodeError:
+                hard_blocks = []
+
+        result.append(
+            {
+                "experience_id": int(row[0]),
+                "created_at": row[1],
+                "symbol": row[2],
+                "action": row[3],
+                "confidence": row[4],
+                "approved": bool(row[5]),
+                "rationale": row[6],
+                "risk_hard_blocks": hard_blocks,
+                "outcome_label": row[8],
+                "pnl_pct": row[9],
+                "reflection_note": row[10],
+                "decision_quality": row[11],
+                "risk_efficiency": row[12],
+                "timing_quality": row[13],
+            }
+        )
+
+    return result
+
+
+def _fetch_strategy_priors(signature: str) -> List[dict]:
+    store_path = _resolve_experience_store_path(signature)
+    if not store_path.exists():
+        return []
+
+    with sqlite3.connect(store_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT symbol, buy_call_bias, buy_put_bias, sample_count, updated_at
+            FROM strategy_priors
+            ORDER BY updated_at DESC
+            """
+        ).fetchall()
+
+    return [
+        {
+            "symbol": row[0],
+            "buy_call_bias": float(row[1]),
+            "buy_put_bias": float(row[2]),
+            "sample_count": int(row[3]),
+            "updated_at": row[4],
+        }
+        for row in rows
+    ]
+
+
+def _build_institutional_alerts(rows: List[dict]) -> List[dict]:
+    alerts: List[dict] = []
+    if not rows:
+        return alerts
+
+    recent = rows[:20]
+    veto_count = sum(1 for row in recent if not row.get("approved", False))
+    veto_rate = (veto_count / len(recent)) if recent else 0.0
+    if veto_rate >= 0.6 and len(recent) >= 5:
+        alerts.append(
+            {
+                "type": "veto_spike",
+                "severity": "warning",
+                "message": f"High veto rate in recent decisions: {veto_rate * 100:.1f}%",
+            }
+        )
+
+    pnl_values = [float(row.get("pnl_pct")) for row in recent if row.get("pnl_pct") is not None]
+    if pnl_values:
+        worst = min(pnl_values)
+        if worst <= -2.0:
+            alerts.append(
+                {
+                    "type": "drawdown_event",
+                    "severity": "critical",
+                    "message": f"Severe single-trade drawdown observed: {worst:.2f}%",
+                }
+            )
+
+    return alerts
 
 # Active WebSocket connections
 active_connections: List[WebSocket] = []
@@ -617,6 +750,106 @@ async def get_latest_institutional_shadow(signature: str):
         "success": latest_payload.get("success"),
         "institutional_shadow": shadow if isinstance(shadow, dict) else {},
     }
+
+
+@app.get("/api/agents/{signature}/institutional/decision-cards")
+async def get_institutional_decision_cards(signature: str, limit: int = Query(default=20, ge=1, le=200)):
+    """Get latest institutional decision cards with reflection fields."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=limit)
+    return {
+        "signature": signature,
+        "count": len(rows),
+        "cards": rows,
+    }
+
+
+@app.get("/api/agents/{signature}/institutional/monitoring")
+async def get_institutional_monitoring(signature: str):
+    """Get institutional monitoring summary including priors and alert signals."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=200)
+    priors = _fetch_strategy_priors(signature=signature)
+    alerts = _build_institutional_alerts(rows)
+
+    total = len(rows)
+    approved = sum(1 for row in rows if row.get("approved", False))
+    vetoed = total - approved
+    outcomes = [row.get("pnl_pct") for row in rows if row.get("pnl_pct") is not None]
+    avg_pnl = (sum(float(value) for value in outcomes) / len(outcomes)) if outcomes else None
+
+    return {
+        "signature": signature,
+        "monitoring": {
+            "total_decisions": total,
+            "approved_decisions": approved,
+            "vetoed_decisions": vetoed,
+            "veto_rate_pct": round((vetoed / total) * 100, 2) if total else 0.0,
+            "avg_realized_pnl_pct": round(avg_pnl, 4) if avg_pnl is not None else None,
+        },
+        "strategy_priors": priors,
+        "alerts": alerts,
+    }
+
+
+@app.get("/api/agents/{signature}/institutional/audit-export")
+async def export_institutional_audit(
+    signature: str,
+    fmt: str = Query(default="json", pattern="^(json|csv)$"),
+    limit: int = Query(default=500, ge=1, le=5000),
+):
+    """Export institutional audit rows in JSON or CSV format."""
+    agent_dir = DATA_PATH / signature
+    if not agent_dir.exists():
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = _fetch_institutional_rows(signature=signature, limit=limit)
+
+    if fmt == "json":
+        return {
+            "signature": signature,
+            "count": len(rows),
+            "rows": rows,
+        }
+
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "experience_id",
+            "created_at",
+            "symbol",
+            "action",
+            "confidence",
+            "approved",
+            "rationale",
+            "risk_hard_blocks",
+            "outcome_label",
+            "pnl_pct",
+            "reflection_note",
+            "decision_quality",
+            "risk_efficiency",
+            "timing_quality",
+        ],
+    )
+    writer.writeheader()
+    for row in rows:
+        csv_row = dict(row)
+        csv_row["risk_hard_blocks"] = ";".join(row.get("risk_hard_blocks", []))
+        writer.writerow(csv_row)
+
+    filename = f"{signature}_institutional_audit.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 ARTIFACT_EXTENSIONS = {'.pdf', '.docx', '.xlsx', '.pptx'}

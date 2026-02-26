@@ -17,6 +17,7 @@ from livebench.trading.screener import run_screener
 from livebench.trading.institutional_desk import run_institutional_desk
 from livebench.trading.experience_store import ExperienceStore
 from livebench.trading.paper_evaluator import compare_backtests
+from livebench.trading.rollout_gate import evaluate_rollout_gate
 from livebench.audit.audit_logger import AuditLogger
 from livebench.configs.feature_flags import FeatureFlags
 from livebench.trading.kill_switch import KillSwitch
@@ -805,6 +806,36 @@ def institutional_run_paper_evaluation(payload: Union[str, Dict[str, Any]]) -> D
         return {"success": False, "error": str(exc)}
 
 
+@tool
+def institutional_evaluate_rollout_gate(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Evaluate go-live and rollback gates for controlled rollout stages.
+
+    Args:
+        payload: JSON object (or string) with boolean fields:
+            - performance_threshold_met
+            - risk_threshold_met
+            - monitoring_active
+            - rollback_tested
+            - shadow_mode_min_days_met
+            - max_drawdown_breach
+            - daily_loss_cap_breach
+            - critical_alert_active
+            - manual_override_rollback
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    report = evaluate_rollout_gate(payload)
+    return {"success": True, "report": report}
+
+
 # Import productivity tools from separate modules (if available)
 try:
     from livebench.tools.productivity import (
@@ -974,7 +1005,7 @@ def get_all_tools():
 
     Returns:
     - 4 core tools (decide_activity, submit_work, learn, get_status)
-    - 10 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome, institutional_run_paper_evaluation)
+    - 11 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome, institutional_run_paper_evaluation, institutional_evaluate_rollout_gate)
     - 6 productivity tools (search_web, read_webpage, create_file, execute_code_sandbox, read_file, create_video) if available
     """
     core_tools = [
@@ -993,6 +1024,7 @@ def get_all_tools():
         institutional_desk_decide,
         institutional_record_outcome,
         institutional_run_paper_evaluation,
+        institutional_evaluate_rollout_gate,
     ]
 
     if PRODUCTIVITY_TOOLS_AVAILABLE:

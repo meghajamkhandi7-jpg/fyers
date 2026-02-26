@@ -15,6 +15,7 @@ from livebench.utils.logger import get_logger
 from livebench.trading.fyers_client import FyersClient
 from livebench.trading.screener import run_screener
 from livebench.trading.institutional_desk import run_institutional_desk
+from livebench.trading.experience_store import ExperienceStore
 from livebench.audit.audit_logger import AuditLogger
 from livebench.configs.feature_flags import FeatureFlags
 from livebench.trading.kill_switch import KillSwitch
@@ -69,6 +70,21 @@ def _record_fyers_screener_run(entry: Dict[str, Any]) -> None:
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _resolve_trading_dir() -> str | None:
+    data_path = _global_state.get("data_path")
+    signature = _global_state.get("signature")
+
+    if not data_path:
+        return None
+
+    trading_dir = os.path.join(data_path, "trading")
+    if signature and not os.path.basename(os.path.normpath(data_path)) == signature:
+        trading_dir = os.path.join(data_path, signature, "trading")
+
+    os.makedirs(trading_dir, exist_ok=True)
+    return trading_dir
 
 
 def set_global_state(
@@ -645,8 +661,41 @@ def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, 
         return {"success": False, "error": "payload must be a JSON object"}
 
     try:
+        signature = _global_state.get("signature")
+        symbol = ""
+        trader_proposal = payload.get("trader_proposal", {})
+        if isinstance(trader_proposal, dict):
+            symbol = str(trader_proposal.get("symbol", "")).strip()
+
+        recent_similar = []
+        experience_id = None
+        store_path = None
+
+        trading_dir = _resolve_trading_dir()
+        store = None
+        if trading_dir:
+            store_path = os.path.join(trading_dir, "experience_store.db")
+            store = ExperienceStore(db_path=store_path)
+            recent_similar = store.list_recent(symbol=symbol if symbol else None, limit=3)
+
         decision = run_institutional_desk(payload)
-        return {"success": True, "decision": decision}
+
+        if store is not None:
+            experience_id = store.record_decision(
+                signature=signature,
+                payload=payload,
+                decision=decision,
+            )
+
+        return {
+            "success": True,
+            "decision": decision,
+            "learning_memory": {
+                "experience_id": experience_id,
+                "recent_similar": recent_similar,
+                "store_path": store_path,
+            },
+        }
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
 

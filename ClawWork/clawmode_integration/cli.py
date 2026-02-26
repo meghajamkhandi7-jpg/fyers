@@ -23,14 +23,106 @@ from loguru import logger
 app = typer.Typer(name="clawmode", help="ClawMode — nanobot + ClawWork economic tracking")
 
 
+_ENV_PROVIDER_CANDIDATES = [
+    {
+        "provider_name": "openrouter",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "api_base_env": "OPENROUTER_BASE_URL",
+        "model_prefixes": ("openrouter/",),
+        "default_model": "openrouter/openai/gpt-4o-mini",
+    },
+    {
+        "provider_name": "openai",
+        "api_key_env": "OPENAI_API_KEY",
+        "api_base_env": "OPENAI_BASE_URL",
+        "model_prefixes": ("openai/", "gpt-"),
+        "default_model": "openai/gpt-4o-mini",
+    },
+    {
+        "provider_name": "anthropic",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "api_base_env": None,
+        "model_prefixes": ("anthropic/", "claude-"),
+        "default_model": "anthropic/claude-3-5-sonnet-latest",
+    },
+    {
+        "provider_name": "groq",
+        "api_key_env": "GROQ_API_KEY",
+        "api_base_env": None,
+        "model_prefixes": ("groq/",),
+        "default_model": "groq/llama-3.1-8b-instant",
+    },
+    {
+        "provider_name": "deepseek",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "api_base_env": "DEEPSEEK_API_BASE",
+        "model_prefixes": ("deepseek/",),
+        "default_model": "deepseek/deepseek-chat",
+    },
+    {
+        "provider_name": "gemini",
+        "api_key_env": "GEMINI_API_KEY",
+        "api_base_env": None,
+        "model_prefixes": ("gemini/",),
+        "default_model": "gemini/gemini-1.5-pro",
+    },
+]
+
+
+def _load_env_vars() -> None:
+    """Load environment variables from .env files if present."""
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+
+    # Current working directory first (common local workflow)
+    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+
+    # Project root fallback when invoked from subdirectories
+    project_root = Path(__file__).resolve().parent.parent
+    load_dotenv(dotenv_path=project_root / ".env", override=False)
+
+
 @app.callback()
 def _callback() -> None:
     """ClawMode — nanobot gateway with ClawWork economic tracking."""
+    _load_env_vars()
 
 
 # -----------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------
+
+def _resolve_provider_from_env(model: str):
+    """Return provider credentials from environment variables if available."""
+    model_l = (model or "").lower()
+
+    # First pass: prefer env key matching current model prefix
+    for candidate in _ENV_PROVIDER_CANDIDATES:
+        if any(model_l.startswith(prefix) for prefix in candidate["model_prefixes"]):
+            api_key = os.getenv(candidate["api_key_env"])
+            if api_key:
+                return {
+                    "api_key": api_key,
+                    "api_base": os.getenv(candidate["api_base_env"]) if candidate["api_base_env"] else None,
+                    "provider_name": candidate["provider_name"],
+                    "default_model": model,
+                }
+
+    # Second pass: first available provider env key
+    for candidate in _ENV_PROVIDER_CANDIDATES:
+        api_key = os.getenv(candidate["api_key_env"])
+        if api_key:
+            chosen_model = os.getenv("CLAWMODE_MODEL") or candidate["default_model"]
+            return {
+                "api_key": api_key,
+                "api_base": os.getenv(candidate["api_base_env"]) if candidate["api_base_env"] else None,
+                "provider_name": candidate["provider_name"],
+                "default_model": chosen_model,
+            }
+
+    return None
 
 def _make_nanobot_provider(nanobot_config):
     """Create a LiteLLMProvider from nanobot config (mirrors nanobot CLI)."""
@@ -38,15 +130,39 @@ def _make_nanobot_provider(nanobot_config):
 
     p = nanobot_config.get_provider()
     model = nanobot_config.agents.defaults.model
-    if not (p and p.api_key) and not model.startswith("bedrock/"):
-        logger.error("No API key configured in ~/.nanobot/config.json")
+    api_key = p.api_key if p else None
+    api_base = nanobot_config.get_api_base()
+    provider_name = nanobot_config.get_provider_name()
+
+    if not api_key and not model.startswith("bedrock/"):
+        env_provider = _resolve_provider_from_env(model)
+        if env_provider:
+            api_key = env_provider["api_key"]
+            api_base = env_provider["api_base"] or api_base
+            provider_name = env_provider["provider_name"]
+            model = env_provider["default_model"]
+            logger.warning(
+                "Using provider credentials from environment variables "
+                f"({provider_name}) because ~/.nanobot/config.json is missing or incomplete"
+            )
+
+    if not api_key and not model.startswith("bedrock/"):
+        message = (
+            "No API key configured in ~/.nanobot/config.json. "
+            "Run `nanobot onboard` and set providers.<name>.apiKey, "
+            "or export one of OPENROUTER_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY "
+            "/ GROQ_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY, "
+            "or use a bedrock/* model with AWS credentials."
+        )
+        logger.error(message)
+        typer.secho(message, fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
     return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=nanobot_config.get_api_base(),
+        api_key=api_key,
+        api_base=api_base,
         default_model=model,
         extra_headers=p.extra_headers if p else None,
-        provider_name=nanobot_config.get_provider_name(),
+        provider_name=provider_name,
     )
 
 
@@ -166,17 +282,24 @@ def _make_agent_loop(nano_cfg, cron_service=None):
     return agent_loop, state, bus
 
 
-def _check_clawwork_enabled() -> None:
-    """Exit with an error if clawwork is not enabled in config."""
+def _check_clawwork_enabled(*, strict: bool = True) -> None:
+    """Validate clawwork flag in config.
+
+    If ``strict`` is False, only warn when disabled/missing and continue.
+    """
     from clawmode_integration.config import load_clawwork_config
 
     cw = load_clawwork_config()
     if not cw.enabled:
-        logger.error(
+        message = (
             "ClawWork is not enabled. "
             "Set agents.clawwork.enabled = true in ~/.nanobot/config.json"
         )
-        raise typer.Exit(1)
+        if strict:
+            logger.error(message)
+            typer.secho(message, fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        logger.warning(f"{message}; continuing in local agent mode with defaults")
 
 
 # -----------------------------------------------------------------------
@@ -208,7 +331,7 @@ def agent(
     else:
         logger.disable("nanobot")
 
-    _check_clawwork_enabled()
+    _check_clawwork_enabled(strict=False)
     nano_cfg = load_config()
 
     agent_loop, state, _bus = _make_agent_loop(nano_cfg)

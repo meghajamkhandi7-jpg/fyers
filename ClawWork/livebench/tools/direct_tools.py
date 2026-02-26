@@ -668,6 +668,7 @@ def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, 
             symbol = str(trader_proposal.get("symbol", "")).strip()
 
         recent_similar = []
+        strategy_prior = None
         experience_id = None
         store_path = None
 
@@ -677,6 +678,8 @@ def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, 
             store_path = os.path.join(trading_dir, "experience_store.db")
             store = ExperienceStore(db_path=store_path)
             recent_similar = store.list_recent(symbol=symbol if symbol else None, limit=3)
+            if symbol:
+                strategy_prior = store.get_strategy_prior(symbol=symbol)
 
         decision = run_institutional_desk(payload)
 
@@ -693,11 +696,65 @@ def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, 
             "learning_memory": {
                 "experience_id": experience_id,
                 "recent_similar": recent_similar,
+                "strategy_prior": strategy_prior,
                 "store_path": store_path,
             },
         }
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
+
+
+@tool
+def institutional_record_outcome(
+    experience_id: int,
+    outcome_label: str,
+    pnl_pct: float,
+    reflection_note: str = "",
+    decision_quality: Union[float, None] = None,
+    risk_efficiency: Union[float, None] = None,
+    timing_quality: Union[float, None] = None,
+) -> Dict[str, Any]:
+    """
+    Persist post-trade outcome and reflection, then update long-term strategy priors.
+
+    Args:
+        experience_id: ID returned by institutional_desk_decide learning_memory.experience_id
+        outcome_label: WIN, LOSS, or BREAKEVEN
+        pnl_pct: Realized P&L in percentage terms
+        reflection_note: Optional qualitative reflection
+        decision_quality: Optional score 0-1 for decision quality
+        risk_efficiency: Optional score 0-1 for risk efficiency
+        timing_quality: Optional score 0-1 for timing quality
+    """
+    trading_dir = _resolve_trading_dir()
+    if not trading_dir:
+        return {"success": False, "error": "data_path not available; cannot persist outcomes"}
+
+    store_path = os.path.join(trading_dir, "experience_store.db")
+    store = ExperienceStore(db_path=store_path)
+
+    try:
+        updated_prior = store.update_outcome_with_reflection(
+            experience_id=int(experience_id),
+            outcome_label=outcome_label,
+            pnl_pct=float(pnl_pct),
+            reflection_note=reflection_note,
+            decision_quality=decision_quality,
+            risk_efficiency=risk_efficiency,
+            timing_quality=timing_quality,
+        )
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+    recent_reflections = store.get_recent_reflections(symbol=updated_prior["symbol"], limit=3)
+
+    return {
+        "success": True,
+        "experience_id": int(experience_id),
+        "updated_prior": updated_prior,
+        "recent_reflections": recent_reflections,
+        "store_path": store_path,
+    }
 
 
 # Import productivity tools from separate modules (if available)
@@ -869,7 +926,7 @@ def get_all_tools():
 
     Returns:
     - 4 core tools (decide_activity, submit_work, learn, get_status)
-    - 8 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide)
+    - 9 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide, institutional_record_outcome)
     - 6 productivity tools (search_web, read_webpage, create_file, execute_code_sandbox, read_file, create_video) if available
     """
     core_tools = [
@@ -886,6 +943,7 @@ def get_all_tools():
         fyers_place_order,
         fyers_run_screener,
         institutional_desk_decide,
+        institutional_record_outcome,
     ]
 
     if PRODUCTIVITY_TOOLS_AVAILABLE:

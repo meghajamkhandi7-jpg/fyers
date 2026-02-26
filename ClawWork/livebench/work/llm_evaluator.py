@@ -18,6 +18,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _normalize_openai_model_name(model: str, base_url: str | None) -> str:
+    """Normalize model names for OpenAI-compatible endpoints.
+
+    OpenAI's chat-completions API expects model IDs like ``gpt-4o-mini``,
+    not provider-prefixed aliases such as ``openai/gpt-4o-mini``.
+    """
+    if not model or "/" not in model:
+        return model
+
+    endpoint = (base_url or "https://api.openai.com/v1").lower()
+    if "api.openai.com" not in endpoint:
+        return model
+
+    prefix, model_id = model.split("/", 1)
+    if prefix.lower() == "openai" and model_id:
+        return model_id
+    return model
+
+
 class LLMEvaluator:
     """
     LLM-based evaluator that uses category-specific meta-prompts
@@ -54,6 +73,8 @@ class LLMEvaluator:
         # Allow overriding evaluation model
         if os.getenv("EVALUATION_MODEL"):
             self.model = os.getenv("EVALUATION_MODEL")
+
+        self.model = _normalize_openai_model_name(self.model, base_url)
         
         # Log configuration
         if os.getenv("EVALUATION_API_KEY"):

@@ -45,6 +45,12 @@ class RiskReview:
     max_position_pct: float
 
 
+@dataclass(frozen=True)
+class PolicyEvaluation:
+    hard_blocks: List[str]
+    checks: Dict[str, Any]
+
+
 def _require_keys(data: Dict[str, Any], required: List[str], section: str) -> None:
     missing = [key for key in required if key not in data]
     if missing:
@@ -149,6 +155,112 @@ def _parse_risk_review(data: Dict[str, Any]) -> RiskReview:
     )
 
 
+def _evaluate_policy_vetoes(
+    *,
+    symbol: str,
+    trader: TraderProposal,
+    risk_context: Dict[str, Any],
+) -> PolicyEvaluation:
+    checks: Dict[str, Any] = {}
+    hard_blocks: List[str] = []
+
+    daily_pnl_pct = float(risk_context.get("daily_realized_pnl_pct", 0.0))
+    max_daily_loss_pct = float(risk_context.get("max_daily_loss_pct", 2.0))
+    checks["daily_loss_guard"] = {
+        "value": daily_pnl_pct,
+        "threshold": -abs(max_daily_loss_pct),
+        "status": "PASS" if daily_pnl_pct > -abs(max_daily_loss_pct) else "FAIL",
+    }
+    if checks["daily_loss_guard"]["status"] == "FAIL":
+        hard_blocks.append("daily_loss_cap")
+
+    per_trade_risk_pct = float(risk_context.get("per_trade_risk_pct", 0.0))
+    max_per_trade_risk_pct = float(risk_context.get("max_per_trade_risk_pct", 0.5))
+    checks["per_trade_risk_guard"] = {
+        "value": per_trade_risk_pct,
+        "threshold": max_per_trade_risk_pct,
+        "status": "PASS" if per_trade_risk_pct <= max_per_trade_risk_pct else "FAIL",
+    }
+    if checks["per_trade_risk_guard"]["status"] == "FAIL":
+        hard_blocks.append("per_trade_risk_cap")
+
+    concurrent_positions = int(risk_context.get("concurrent_positions", 0))
+    max_concurrent_positions = int(risk_context.get("max_concurrent_positions", 2))
+    checks["concurrent_positions_guard"] = {
+        "value": concurrent_positions,
+        "threshold": max_concurrent_positions,
+        "status": "PASS" if concurrent_positions < max_concurrent_positions else "FAIL",
+    }
+    if checks["concurrent_positions_guard"]["status"] == "FAIL":
+        hard_blocks.append("max_concurrent_positions")
+
+    symbol_exposure_pct = float(risk_context.get("symbol_exposure_pct", 0.0))
+    max_symbol_exposure_pct = float(risk_context.get("max_symbol_exposure_pct", 60.0))
+    checks["symbol_exposure_guard"] = {
+        "value": symbol_exposure_pct,
+        "threshold": max_symbol_exposure_pct,
+        "status": "PASS" if symbol_exposure_pct <= max_symbol_exposure_pct else "FAIL",
+    }
+    if checks["symbol_exposure_guard"]["status"] == "FAIL":
+        hard_blocks.append("max_underlying_exposure")
+
+    data_completeness_pct = float(risk_context.get("data_completeness_pct", 100.0))
+    min_data_completeness_pct = float(risk_context.get("min_data_completeness_pct", 95.0))
+    checks["data_quality_guard"] = {
+        "value": data_completeness_pct,
+        "threshold": min_data_completeness_pct,
+        "status": "PASS" if data_completeness_pct >= min_data_completeness_pct else "FAIL",
+    }
+    if checks["data_quality_guard"]["status"] == "FAIL":
+        hard_blocks.append("data_quality")
+
+    bid_ask_spread_bps = float(risk_context.get("bid_ask_spread_bps", 0.0))
+    max_bid_ask_spread_bps = float(risk_context.get("max_bid_ask_spread_bps", 50.0))
+    checks["liquidity_guard"] = {
+        "value": bid_ask_spread_bps,
+        "threshold": max_bid_ask_spread_bps,
+        "status": "PASS" if bid_ask_spread_bps <= max_bid_ask_spread_bps else "FAIL",
+    }
+    if checks["liquidity_guard"]["status"] == "FAIL":
+        hard_blocks.append("liquidity_spread")
+
+    event_blackout = bool(risk_context.get("event_blackout", False))
+    checks["event_blackout_guard"] = {
+        "value": event_blackout,
+        "status": "FAIL" if event_blackout else "PASS",
+    }
+    if checks["event_blackout_guard"]["status"] == "FAIL":
+        hard_blocks.append("event_blackout")
+
+    available_risk_budget_pct = float(risk_context.get("available_risk_budget_pct", 100.0))
+    checks["risk_budget_guard"] = {
+        "value": available_risk_budget_pct,
+        "threshold": 0.0,
+        "status": "PASS" if available_risk_budget_pct > 0 else "FAIL",
+    }
+    if checks["risk_budget_guard"]["status"] == "FAIL":
+        hard_blocks.append("risk_budget_unavailable")
+
+    restricted_symbols = risk_context.get("restricted_symbols", [])
+    if restricted_symbols is None:
+        restricted_symbols = []
+    if not isinstance(restricted_symbols, list):
+        raise ValueError("risk_context.restricted_symbols must be a list")
+    restricted_set = {str(item).strip().upper() for item in restricted_symbols if str(item).strip()}
+    symbol_upper = symbol.strip().upper()
+    checks["restricted_symbol_guard"] = {
+        "value": symbol_upper,
+        "status": "FAIL" if symbol_upper in restricted_set else "PASS",
+    }
+    if checks["restricted_symbol_guard"]["status"] == "FAIL":
+        hard_blocks.append("restricted_symbol")
+
+    return PolicyEvaluation(
+        hard_blocks=sorted(set(hard_blocks)),
+        checks=checks,
+    )
+
+
 def _expected_action_from_votes(analysts: List[AnalystOutput]) -> DeskAction:
     bullish_score = sum(CONFIDENCE_SCORE[item.confidence] for item in analysts if item.stance == "BULLISH")
     bearish_score = sum(CONFIDENCE_SCORE[item.confidence] for item in analysts if item.stance == "BEARISH")
@@ -189,8 +301,21 @@ def run_institutional_desk(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     trader = _parse_trader_proposal(payload["trader_proposal"])
     risk = _parse_risk_review(payload["risk_review"])
+    risk_context_raw = payload.get("risk_context", {})
+    if risk_context_raw is None:
+        risk_context_raw = {}
+    if not isinstance(risk_context_raw, dict):
+        raise ValueError("payload.risk_context must be an object when provided")
 
-    if not risk.approved or risk.hard_blocks:
+    policy_eval = _evaluate_policy_vetoes(
+        symbol=trader.symbol,
+        trader=trader,
+        risk_context=risk_context_raw,
+    )
+    combined_hard_blocks = sorted(set(risk.hard_blocks + policy_eval.hard_blocks))
+
+    if not risk.approved or combined_hard_blocks:
+        veto_reason = risk.reason if not risk.approved else "Policy veto triggered"
         return {
             "schema_version": SCHEMA_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -199,12 +324,13 @@ def run_institutional_desk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "symbol": trader.symbol,
             "quantity": 0,
             "confidence": "LOW",
-            "rationale": f"Risk manager veto: {risk.reason}",
+            "rationale": f"Risk manager veto: {veto_reason}",
             "risk": {
                 "approved": risk.approved,
                 "reason": risk.reason,
-                "hard_blocks": risk.hard_blocks,
+                "hard_blocks": combined_hard_blocks,
                 "max_position_pct": risk.max_position_pct,
+                "policy_checks": policy_eval.checks,
             },
             "role_votes": [
                 {
@@ -233,8 +359,9 @@ def run_institutional_desk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "risk": {
                 "approved": risk.approved,
                 "reason": risk.reason,
-                "hard_blocks": risk.hard_blocks,
+                "hard_blocks": combined_hard_blocks,
                 "max_position_pct": risk.max_position_pct,
+                "policy_checks": policy_eval.checks,
             },
             "role_votes": [
                 {
@@ -261,8 +388,9 @@ def run_institutional_desk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "risk": {
                 "approved": risk.approved,
                 "reason": risk.reason,
-                "hard_blocks": risk.hard_blocks,
+                "hard_blocks": combined_hard_blocks,
                 "max_position_pct": risk.max_position_pct,
+                "policy_checks": policy_eval.checks,
             },
             "role_votes": [
                 {
@@ -290,8 +418,9 @@ def run_institutional_desk(payload: Dict[str, Any]) -> Dict[str, Any]:
         "risk": {
             "approved": risk.approved,
             "reason": risk.reason,
-            "hard_blocks": risk.hard_blocks,
+            "hard_blocks": combined_hard_blocks,
             "max_position_pct": risk.max_position_pct,
+            "policy_checks": policy_eval.checks,
         },
         "role_votes": [
             {

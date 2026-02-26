@@ -14,6 +14,11 @@ from datetime import datetime
 from livebench.utils.logger import get_logger
 from livebench.trading.fyers_client import FyersClient
 from livebench.trading.screener import run_screener
+from livebench.trading.institutional_desk import run_institutional_desk
+from livebench.audit.audit_logger import AuditLogger
+from livebench.configs.feature_flags import FeatureFlags
+from livebench.trading.kill_switch import KillSwitch
+from livebench.trading.guardrails import guard_trade_request
 
 
 # Global state (will be set by agent)
@@ -476,6 +481,43 @@ def fyers_place_order(order_payload: Union[str, Dict[str, Any]]) -> Dict[str, An
             "error": "order_payload must be a JSON object"
         }
 
+    symbol = str(order_payload.get("symbol", "UNKNOWN"))
+    flags = FeatureFlags.from_env()
+    kill_switch = KillSwitch()
+    audit = AuditLogger()
+
+    guardrail_result = guard_trade_request(
+        symbol=symbol,
+        flags=flags,
+        kill_switch=kill_switch,
+        audit=audit,
+        context={"tool": "fyers_place_order"}
+    )
+
+    if not guardrail_result.allowed:
+        audit_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "signature": _global_state.get("signature"),
+            "date": _global_state.get("current_date"),
+            "result": "blocked_guardrail",
+            "order_payload": order_payload,
+            "guardrail_decision": {
+                "action": guardrail_result.decision.action if guardrail_result.decision else "NO_TRADE",
+                "reason": guardrail_result.decision.reason if guardrail_result.decision else "Unknown guardrail block"
+            }
+        }
+        _record_fyers_order_attempt(audit_entry)
+        return {
+            "success": True,
+            "blocked": True,
+            "order_sent": False,
+            "guardrail": {
+                "action": guardrail_result.decision.action if guardrail_result.decision else "NO_TRADE",
+                "reason": guardrail_result.decision.reason if guardrail_result.decision else "Unknown guardrail block"
+            },
+            "message": "Order blocked by trading guardrails"
+        }
+
     dry_run = _env_flag("FYERS_DRY_RUN", True)
     allow_live_orders = _env_flag("FYERS_ALLOW_LIVE_ORDERS", False)
 
@@ -580,6 +622,33 @@ def fyers_run_screener(watchlist: Union[str, list, None] = None) -> Dict[str, An
     }
     _record_fyers_screener_run(audit_entry)
     return result
+
+
+@tool
+def institutional_desk_decide(payload: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Generate a strict-schema institutional desk decision from analyst, trader, and risk inputs.
+
+    Args:
+        payload: JSON object (or JSON string) with keys:
+            - analysts: list of 3 role outputs (technical, fundamental, sentiment)
+            - trader_proposal: trader plan
+            - risk_review: risk manager approval/veto
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            return {"success": False, "error": f"payload must be valid JSON: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"success": False, "error": "payload must be a JSON object"}
+
+    try:
+        decision = run_institutional_desk(payload)
+        return {"success": True, "decision": decision}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
 
 
 # Import productivity tools from separate modules (if available)
@@ -751,7 +820,7 @@ def get_all_tools():
 
     Returns:
     - 4 core tools (decide_activity, submit_work, learn, get_status)
-    - 7 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener)
+    - 8 FYERS tools (profile, funds, holdings, positions, quotes, place_order, run_screener, institutional_desk_decide)
     - 6 productivity tools (search_web, read_webpage, create_file, execute_code_sandbox, read_file, create_video) if available
     """
     core_tools = [
@@ -767,6 +836,7 @@ def get_all_tools():
         fyers_quotes,
         fyers_place_order,
         fyers_run_screener,
+        institutional_desk_decide,
     ]
 
     if PRODUCTIVITY_TOOLS_AVAILABLE:
